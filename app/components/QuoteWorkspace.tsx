@@ -38,6 +38,39 @@ export default function QuoteWorkspace() {
     setMessage("Synthetic demo restored.");
   }
 
+  function downloadApprovedQuote() {
+    const ready = quote.lines.filter((line) => line.reviewStatus === "ready");
+    if (!ready.length) {
+      setMessage("No approved quotation lines are ready to export.");
+      return;
+    }
+
+    const header = ["source_code","description","quantity","unit","matched_code","unit_price","line_total"];
+    const rows = ready.map((line) => [
+      line.code,
+      line.description,
+      line.quantity,
+      line.unit,
+      line.matchedCode ?? "",
+      line.approvedUnitPrice ?? "",
+      line.lineTotal ?? ""
+    ]);
+
+    const csv = [header, ...rows]
+      .map((row) => row.map((value) => '"' + String(value).replaceAll('"', '""') + '"').join(","))
+      .join("\n");
+
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = "quoteflow-approved-quotation.csv";
+    anchor.click();
+    URL.revokeObjectURL(url);
+
+    setMessage("Exported approved quotation lines. Review and blocked lines were excluded.");
+  }
+
   return (
     <section id="workspace" className="workspace">
       <div className="workspace-head">
@@ -108,7 +141,15 @@ export default function QuoteWorkspace() {
         <div><strong>{quote.readyCount}</strong><span>Ready</span></div>
         <div><strong>{quote.reviewCount}</strong><span>Needs review</span></div>
         <div><strong>{quote.blockedCount}</strong><span>Blocked</span></div>
-        <div className="subtotal"><span>Approved subtotal</span><strong>{quote.subtotal.toFixed(2)}</strong></div>
+        <div className="subtotal"><span>Approved subtotal</span><strong>{"$" + quote.subtotal.toFixed(2)}</strong></div>
+      </div>
+
+      <div className="export-row">
+        <div>
+          <strong>Ready to export</strong>
+          <span>Only exact, approved-price lines are included in the current MVP export.</span>
+        </div>
+        <button type="button" onClick={downloadApprovedQuote}>Download approved quote CSV</button>
       </div>
 
       <div className="guardrail">
