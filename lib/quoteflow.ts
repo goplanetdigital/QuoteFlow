@@ -106,7 +106,7 @@ export function matchLine(line: RfqLine, catalogue = demoCatalogue): QuoteLine {
 
 export function buildQuote(lines: RfqLine[]) {
   const quoteLines = lines.map((line) => matchLine(line));
-  const subtotal = quoteLines.reduce((sum, line) => sum + (line.lineTotal ?? 0), 0);
+  const subtotal = quoteLines.reduce((sum, line) => sum + (line.reviewStatus === "ready" ? line.lineTotal ?? 0 : 0), 0);
 
   return {
     lines: quoteLines,
