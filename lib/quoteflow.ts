@@ -38,7 +38,7 @@ export const demoRfq: RfqLine[] = [
   { id: "3", code: "DB-12W", description: "Distribution board 12 way", quantity: 3, unit: "pcs" }
 ];
 
-function normalize(value: string) {
+export function normalize(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 }
 
@@ -57,7 +57,7 @@ function overlapScore(a: string, b: string) {
   return shared / Math.max(aw.size, bw.size);
 }
 
-export function matchLine(line: RfqLine, catalogue = demoCatalogue): QuoteLine {
+export function matchLine(line: RfqLine, catalogue: CatalogueItem[] = demoCatalogue): QuoteLine {
   const exact = catalogue.find((item) => normalize(item.code) === normalize(line.code));
   const scored = catalogue
     .map((item) => ({
@@ -104,9 +104,12 @@ export function matchLine(line: RfqLine, catalogue = demoCatalogue): QuoteLine {
   };
 }
 
-export function buildQuote(lines: RfqLine[]) {
-  const quoteLines = lines.map((line) => matchLine(line));
-  const subtotal = quoteLines.reduce((sum, line) => sum + (line.reviewStatus === "ready" ? line.lineTotal ?? 0 : 0), 0);
+export function buildQuote(lines: RfqLine[], catalogue: CatalogueItem[] = demoCatalogue) {
+  const quoteLines = lines.map((line) => matchLine(line, catalogue));
+  const subtotal = quoteLines.reduce(
+    (sum, line) => sum + (line.reviewStatus === "ready" ? line.lineTotal ?? 0 : 0),
+    0
+  );
 
   return {
     lines: quoteLines,
@@ -117,6 +120,32 @@ export function buildQuote(lines: RfqLine[]) {
   };
 }
 
+function splitCsvRow(row: string) {
+  const values: string[] = [];
+  let current = "";
+  let quoted = false;
+
+  for (let i = 0; i < row.length; i += 1) {
+    const char = row[i];
+    if (char === '"') {
+      if (quoted && row[i + 1] === '"') {
+        current += '"';
+        i += 1;
+      } else {
+        quoted = !quoted;
+      }
+    } else if (char === "," && !quoted) {
+      values.push(current.trim());
+      current = "";
+    } else {
+      current += char;
+    }
+  }
+
+  values.push(current.trim());
+  return values;
+}
+
 export function parseCsv(text: string): RfqLine[] {
   const rows = text
     .split(/\r?\n/)
@@ -125,23 +154,60 @@ export function parseCsv(text: string): RfqLine[] {
 
   if (rows.length < 2) return [];
 
-  const headers = rows[0].split(",").map((header) => normalize(header));
+  const headers = splitCsvRow(rows[0]).map((header) => normalize(header));
   const codeIndex = headers.findIndex((h) => ["code", "sku", "item code", "product code"].includes(h));
-  const descIndex = headers.findIndex((h) => ["description", "item", "product"].includes(h));
+  const descIndex = headers.findIndex((h) => ["description", "item", "product", "item description"].includes(h));
   const qtyIndex = headers.findIndex((h) => ["qty", "quantity"].includes(h));
   const unitIndex = headers.findIndex((h) => ["unit", "uom"].includes(h));
 
   if (descIndex < 0 || qtyIndex < 0) return [];
 
-  return rows.slice(1).map((row, index) => {
-    const cols = row.split(",").map((col) => col.trim());
+  return rows
+    .slice(1)
+    .map((row, index) => {
+      const cols = splitCsvRow(row);
+      return {
+        id: String(index + 1),
+        code: codeIndex >= 0 ? cols[codeIndex] ?? "" : "",
+        description: cols[descIndex] ?? "",
+        quantity: Number(cols[qtyIndex] ?? 0) || 0,
+        unit: unitIndex >= 0 ? cols[unitIndex] ?? "pcs" : "pcs"
+      };
+    })
+    .filter((line) => line.description && line.quantity > 0);
+}
 
-    return {
-      id: String(index + 1),
-      code: codeIndex >= 0 ? cols[codeIndex] ?? "" : "",
-      description: cols[descIndex] ?? "",
-      quantity: Number(cols[qtyIndex] ?? 0) || 0,
-      unit: unitIndex >= 0 ? cols[unitIndex] ?? "pcs" : "pcs"
-    };
-  }).filter((line) => line.description && line.quantity > 0);
+export function parseCatalogueCsv(text: string): CatalogueItem[] {
+  const rows = text
+    .split(/\r?\n/)
+    .map((row) => row.trim())
+    .filter(Boolean);
+
+  if (rows.length < 2) return [];
+
+  const headers = splitCsvRow(rows[0]).map((header) => normalize(header));
+  const codeIndex = headers.findIndex((h) => ["code", "sku", "item code", "product code"].includes(h));
+  const descIndex = headers.findIndex((h) => ["description", "item", "product", "item description"].includes(h));
+  const unitIndex = headers.findIndex((h) => ["unit", "uom"].includes(h));
+  const priceIndex = headers.findIndex((h) =>
+    ["price", "unit price", "unitprice", "approved price", "approved unit price", "selling price"].includes(h)
+  );
+
+  if (descIndex < 0 || priceIndex < 0) return [];
+
+  return rows
+    .slice(1)
+    .map((row) => {
+      const cols = splitCsvRow(row);
+      const rawPrice = String(cols[priceIndex] ?? "").replace(/[^0-9.-]/g, "");
+      const parsedPrice = rawPrice ? Number(rawPrice) : NaN;
+
+      return {
+        code: codeIndex >= 0 ? cols[codeIndex] ?? "" : "",
+        description: cols[descIndex] ?? "",
+        unit: unitIndex >= 0 ? cols[unitIndex] ?? "pcs" : "pcs",
+        approvedUnitPrice: Number.isFinite(parsedPrice) ? parsedPrice : null
+      };
+    })
+    .filter((item) => item.description);
 }
