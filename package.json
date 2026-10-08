@@ -12,7 +12,8 @@
     "react": "19.1.1",
     "react-dom": "19.1.1",
     "xlsx": "^0.18.5",
-    "pdf-parse": "^1.1.1"
+    "pdf-parse": "^1.1.1",
+    "stripe": "^18.5.0"
   },
   "devDependencies": {
     "@types/node": "^22",
