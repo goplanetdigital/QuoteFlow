@@ -211,3 +211,105 @@ export function parseCatalogueCsv(text: string): CatalogueItem[] {
     })
     .filter((item) => item.description);
 }
+
+
+export type PdfParseResult = {
+  lines: RfqLine[];
+  warnings: string[];
+};
+
+function detectUnit(value: string) {
+  const v = normalize(value);
+  if (["pcs", "pc", "piece", "pieces", "nos", "no", "unit", "units"].includes(v)) return "pcs";
+  if (["m", "meter", "metre", "meters", "metres"].includes(v)) return "m";
+  if (["ft", "feet"].includes(v)) return "ft";
+  if (["kg", "kgs"].includes(v)) return "kg";
+  if (["set", "sets"].includes(v)) return "set";
+  if (["box", "boxes"].includes(v)) return "box";
+  if (["roll", "rolls"].includes(v)) return "roll";
+  return "";
+}
+
+function looksLikeCode(value: string) {
+  const compact = value.trim();
+  return /^[A-Z0-9][A-Z0-9._\/-]{2,}$/i.test(compact) && /[A-Za-z]/.test(compact);
+}
+
+export function parsePdfText(text: string): PdfParseResult {
+  const warnings: string[] = [];
+  const rawLines = text
+    .split(/\r?\n/)
+    .map((line) => line.replace(/\s+/g, " ").trim())
+    .filter(Boolean);
+
+  const parsed: RfqLine[] = [];
+
+  for (const raw of rawLines) {
+    if (/^(rfq|request for quotation|quotation|description|item|qty|quantity|unit|uom|price|amount)\b/i.test(raw)) {
+      continue;
+    }
+
+    const tokens = raw.split(" ");
+    if (tokens.length < 2) continue;
+
+    let qtyIndex = -1;
+    let quantity = 0;
+
+    for (let i = tokens.length - 1; i >= 0; i -= 1) {
+      const cleaned = tokens[i].replace(/,/g, "");
+      if (/^\d+(?:\.\d+)?$/.test(cleaned)) {
+        const num = Number(cleaned);
+        if (Number.isFinite(num) && num > 0) {
+          qtyIndex = i;
+          quantity = num;
+          break;
+        }
+      }
+    }
+
+    if (qtyIndex < 0) continue;
+
+    let unit = "pcs";
+    let unitIndex = -1;
+    for (let i = Math.max(0, qtyIndex - 2); i <= Math.min(tokens.length - 1, qtyIndex + 2); i += 1) {
+      const detected = detectUnit(tokens[i]);
+      if (detected) {
+        unit = detected;
+        unitIndex = i;
+        break;
+      }
+    }
+
+    const leading = tokens.slice(0, qtyIndex).filter((_, idx) => idx !== unitIndex);
+    const trailing = tokens.slice(qtyIndex + 1).filter((_, idx) => qtyIndex + 1 + idx !== unitIndex);
+    const contentTokens = [...leading, ...trailing];
+
+    if (!contentTokens.length) continue;
+
+    const first = contentTokens[0];
+    const code = looksLikeCode(first) ? first : "";
+    const description = (code ? contentTokens.slice(1) : contentTokens).join(" ").trim();
+
+    if (!description || description.length < 3) continue;
+
+    parsed.push({
+      id: String(parsed.length + 1),
+      code,
+      description,
+      quantity,
+      unit
+    });
+  }
+
+  if (!parsed.length) {
+    warnings.push(
+      "No reliable line items were detected automatically. The PDF may use a complex layout or be a scanned image."
+    );
+  } else {
+    warnings.push(
+      "PDF extraction is heuristic. Review every extracted line before generating a quotation."
+    );
+  }
+
+  return { lines: parsed, warnings };
+}

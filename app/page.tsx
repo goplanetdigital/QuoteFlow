@@ -10,8 +10,8 @@ export default function Home() {
   return (
     <main>
       <section className="hero">
-        <div className="badge">QuoteFlow MVP</div>
-        <h1>Turn messy RFQs into quotation drafts.</h1>
+        <div className="badge">QuoteFlow</div>
+        <h1>Turn messy RFQs into review-ready quotations.</h1>
         <p>
           Upload an RFQ, match it against approved catalogue data, surface uncertain
           lines, and export only quotation rows that are safe to use.
@@ -27,7 +27,7 @@ export default function Home() {
         <article>
           <span>01</span>
           <h2>Upload</h2>
-          <p>Bring in CSV RFQ data now; PDF and XLSX extraction are next.</p>
+          <p>Upload PDF, CSV, or Excel RFQs plus your approved catalogue or price list.</p>
         </article>
         <article>
           <span>02</span>
@@ -37,7 +37,7 @@ export default function Home() {
         <article>
           <span>03</span>
           <h2>Quote</h2>
-          <p>Use approved prices only and export a clean quotation draft.</p>
+          <p>Resolve review items, then generate a clean Excel or print-ready PDF quotation.</p>
         </article>
       </section>
 
