@@ -1,51 +1,139 @@
 "use client";
 
 import { ChangeEvent, useMemo, useState } from "react";
-import { buildQuote, demoRfq, parseCsv, RfqLine } from "../../lib/quoteflow";
+import {
+  buildQuote,
+  CatalogueItem,
+  demoCatalogue,
+  demoRfq,
+  parseCatalogueCsv,
+  parseCsv,
+  RfqLine
+} from "../../lib/quoteflow";
+
+async function fileToCsv(file: File) {
+  const name = file.name.toLowerCase();
+
+  if (name.endsWith(".csv")) {
+    return file.text();
+  }
+
+  if (name.endsWith(".xlsx") || name.endsWith(".xls")) {
+    const XLSX = await import("xlsx");
+    const buffer = await file.arrayBuffer();
+    const workbook = XLSX.read(buffer, { type: "array" });
+    const firstSheetName = workbook.SheetNames[0];
+
+    if (!firstSheetName) {
+      return "";
+    }
+
+    const sheet = workbook.Sheets[firstSheetName];
+    return XLSX.utils.sheet_to_csv(sheet);
+  }
+
+  return "";
+}
 
 export default function QuoteWorkspace() {
   const [rfqLines, setRfqLines] = useState<RfqLine[]>(demoRfq);
+  const [catalogue, setCatalogue] = useState<CatalogueItem[]>(demoCatalogue);
   const [sourceName, setSourceName] = useState("Synthetic RFQ demo.csv");
-  const [message, setMessage] = useState("Demo data loaded. Upload a CSV to replace it.");
+  const [catalogueName, setCatalogueName] = useState("Built-in demo catalogue");
+  const [message, setMessage] = useState(
+    "Demo data loaded. Upload your RFQ and catalogue as CSV or Excel."
+  );
 
-  const quote = useMemo(() => buildQuote(rfqLines), [rfqLines]);
+  const quote = useMemo(() => buildQuote(rfqLines, catalogue), [rfqLines, catalogue]);
 
-  async function handleUpload(event: ChangeEvent<HTMLInputElement>) {
+  async function handleRfqUpload(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (!file) return;
 
-    if (!file.name.toLowerCase().endsWith(".csv")) {
-      setMessage("MVP-01 currently accepts CSV for live parsing. PDF/XLSX extraction comes next.");
-      return;
+    try {
+      const csv = await fileToCsv(file);
+      if (!csv) {
+        setMessage("Unsupported RFQ file. Use CSV, XLSX, or XLS.");
+        return;
+      }
+
+      const parsed = parseCsv(csv);
+      if (!parsed.length) {
+        setMessage(
+          "Could not detect RFQ rows. Expected columns such as code, description, quantity, and unit."
+        );
+        return;
+      }
+
+      setRfqLines(parsed);
+      setSourceName(file.name);
+      setMessage(
+        "Loaded " + parsed.length + " RFQ line" + (parsed.length === 1 ? "." : "s.")
+      );
+    } catch {
+      setMessage("Could not read that RFQ file. Please check the spreadsheet format.");
     }
+  }
 
-    const text = await file.text();
-    const parsed = parseCsv(text);
+  async function handleCatalogueUpload(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) return;
 
-    if (!parsed.length) {
-      setMessage("Could not detect usable rows. Expected columns: code, description, quantity, unit.");
-      return;
+    try {
+      const csv = await fileToCsv(file);
+      if (!csv) {
+        setMessage("Unsupported catalogue file. Use CSV, XLSX, or XLS.");
+        return;
+      }
+
+      const parsed = parseCatalogueCsv(csv);
+      if (!parsed.length) {
+        setMessage(
+          "Could not detect catalogue rows. Expected description and price columns; code and unit are optional."
+        );
+        return;
+      }
+
+      setCatalogue(parsed);
+      setCatalogueName(file.name);
+      setMessage(
+        "Loaded " +
+          parsed.length +
+          " catalogue item" +
+          (parsed.length === 1 ? "." : "s.") +
+          " RFQ matching has been recalculated."
+      );
+    } catch {
+      setMessage("Could not read that catalogue file. Please check the spreadsheet format.");
     }
-
-    setRfqLines(parsed);
-    setSourceName(file.name);
-    setMessage("Loaded " + parsed.length + " RFQ line" + (parsed.length === 1 ? "." : "s."));
   }
 
   function resetDemo() {
     setRfqLines(demoRfq);
+    setCatalogue(demoCatalogue);
     setSourceName("Synthetic RFQ demo.csv");
-    setMessage("Synthetic demo restored.");
+    setCatalogueName("Built-in demo catalogue");
+    setMessage("Synthetic RFQ and demo catalogue restored.");
   }
 
   function downloadApprovedQuote() {
     const ready = quote.lines.filter((line) => line.reviewStatus === "ready");
+
     if (!ready.length) {
       setMessage("No approved quotation lines are ready to export.");
       return;
     }
 
-    const header = ["source_code","description","quantity","unit","matched_code","unit_price","line_total"];
+    const header = [
+      "source_code",
+      "description",
+      "quantity",
+      "unit",
+      "matched_code",
+      "unit_price",
+      "line_total"
+    ];
+
     const rows = ready.map((line) => [
       line.code,
       line.description,
@@ -57,7 +145,11 @@ export default function QuoteWorkspace() {
     ]);
 
     const csv = [header, ...rows]
-      .map((row) => row.map((value) => '"' + String(value).replaceAll('"', '""') + '"').join(","))
+      .map((row) =>
+        row
+          .map((value) => '"' + String(value).replaceAll('"', '""') + '"')
+          .join(",")
+      )
       .join("\n");
 
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
@@ -75,23 +167,53 @@ export default function QuoteWorkspace() {
     <section id="workspace" className="workspace">
       <div className="workspace-head">
         <div>
-          <div className="eyebrow">MVP-01 · review workspace</div>
+          <div className="eyebrow">MVP-02 · real file inputs</div>
           <h2>RFQ to quotation</h2>
-          <p className="muted">{sourceName}</p>
+          <p className="muted">RFQ: {sourceName}</p>
+          <p className="muted">
+            Catalogue: {catalogueName} · {catalogue.length} items
+          </p>
         </div>
 
         <div className="workspace-actions">
           <button className="secondary-button" type="button" onClick={resetDemo}>
             Reset demo
           </button>
+
+          <label className="upload-button secondary-upload">
+            Upload catalogue
+            <input
+              type="file"
+              accept=".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
+              onChange={handleCatalogueUpload}
+            />
+          </label>
+
           <label className="upload-button">
-            Upload CSV
-            <input type="file" accept=".csv,text/csv" onChange={handleUpload} />
+            Upload RFQ
+            <input
+              type="file"
+              accept=".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
+              onChange={handleRfqUpload}
+            />
           </label>
         </div>
       </div>
 
       <div className="notice">{message}</div>
+
+      <div className="input-status-grid">
+        <div>
+          <span>RFQ source</span>
+          <strong>{rfqLines.length} lines</strong>
+          <small>{sourceName}</small>
+        </div>
+        <div>
+          <span>Approved catalogue</span>
+          <strong>{catalogue.length} items</strong>
+          <small>{catalogueName}</small>
+        </div>
+      </div>
 
       <div className="table-wrap">
         <table>
@@ -116,7 +238,9 @@ export default function QuoteWorkspace() {
                     <small>Matched: {row.matchedDescription}</small>
                   ) : null}
                 </td>
-                <td>{row.quantity} {row.unit}</td>
+                <td>
+                  {row.quantity} {row.unit}
+                </td>
                 <td>
                   <span className={"match " + row.matchStatus}>{row.matchStatus}</span>
                   {row.matchedCode ? <small>{row.matchedCode}</small> : null}
@@ -137,24 +261,46 @@ export default function QuoteWorkspace() {
       </div>
 
       <div className="summary">
-        <div><strong>{quote.lines.length}</strong><span>RFQ lines</span></div>
-        <div><strong>{quote.readyCount}</strong><span>Ready</span></div>
-        <div><strong>{quote.reviewCount}</strong><span>Needs review</span></div>
-        <div><strong>{quote.blockedCount}</strong><span>Blocked</span></div>
-        <div className="subtotal"><span>Approved subtotal</span><strong>{"$" + quote.subtotal.toFixed(2)}</strong></div>
+        <div>
+          <strong>{quote.lines.length}</strong>
+          <span>RFQ lines</span>
+        </div>
+        <div>
+          <strong>{quote.readyCount}</strong>
+          <span>Ready</span>
+        </div>
+        <div>
+          <strong>{quote.reviewCount}</strong>
+          <span>Needs review</span>
+        </div>
+        <div>
+          <strong>{quote.blockedCount}</strong>
+          <span>Blocked</span>
+        </div>
+        <div className="subtotal">
+          <span>Approved subtotal</span>
+          <strong>{"$" + quote.subtotal.toFixed(2)}</strong>
+        </div>
       </div>
 
       <div className="export-row">
         <div>
           <strong>Ready to export</strong>
-          <span>Only exact, approved-price lines are included in the current MVP export.</span>
+          <span>
+            Only exact, approved-price lines are included. Review and blocked rows stay out.
+          </span>
         </div>
-        <button type="button" onClick={downloadApprovedQuote}>Download approved quote CSV</button>
+        <button type="button" onClick={downloadApprovedQuote}>
+          Download approved quote CSV
+        </button>
       </div>
 
       <div className="guardrail">
         <strong>QuoteFlow safety rule</strong>
-        <span>Blocked or uncertain rows are never silently converted into approved quotation lines.</span>
+        <span>
+          Customer catalogue prices are treated as approved source data. Missing prices and
+          uncertain matches are never silently converted into quotation lines.
+        </span>
       </div>
     </section>
   );
