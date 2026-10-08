@@ -1,6 +1,6 @@
 "use client";
 
-import { ChangeEvent, useMemo, useState } from "react";
+import { ChangeEvent, useEffect, useMemo, useState } from "react";
 import {
   buildQuote,
   CatalogueItem,
@@ -63,6 +63,8 @@ export default function QuoteWorkspace() {
   const [message, setMessage] = useState(
     "Demo data loaded. Upload an RFQ and your approved catalogue."
   );
+  const [exportUnlocked, setExportUnlocked] = useState(false);
+  const [checkoutBusy, setCheckoutBusy] = useState(false);
   const [meta, setMeta] = useState<QuoteMeta>({
     supplierName: "Your Company",
     customerName: "Customer",
@@ -112,6 +114,50 @@ export default function QuoteWorkspace() {
     () => quote.lines.filter((line) => line.reviewStatus === "ready"),
     [quote.lines]
   );
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const sessionId = params.get("session_id");
+    const paid = params.get("paid");
+
+    if (paid === "1" && sessionId) {
+      fetch("/api/verify-session?session_id=" + encodeURIComponent(sessionId))
+        .then((response) => response.json())
+        .then((data) => {
+          if (data.paid) {
+            setExportUnlocked(true);
+            setMessage("Payment confirmed. Excel and PDF quotation export are unlocked for this session.");
+          }
+        })
+        .catch(() => {
+          setMessage("Payment verification could not be completed. Please try again.");
+        });
+    } else if (params.get("checkout") === "cancelled") {
+      setMessage("Checkout cancelled. You can continue reviewing your quotation and pay when ready to export.");
+    }
+  }, []);
+
+  async function startCheckout() {
+    if (!readyLines.length) {
+      setMessage("Resolve at least one quotation line before checkout.");
+      return;
+    }
+
+    setCheckoutBusy(true);
+    try {
+      const response = await fetch("/api/checkout", { method: "POST" });
+      const data = await response.json();
+      if (!response.ok || !data.url) {
+        setMessage(data.error || "Unable to start checkout right now.");
+        return;
+      }
+      window.location.href = data.url;
+    } catch {
+      setMessage("Unable to start checkout right now.");
+    } finally {
+      setCheckoutBusy(false);
+    }
+  }
 
   async function handleRfqUpload(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
@@ -233,6 +279,10 @@ export default function QuoteWorkspace() {
   }
 
   async function downloadQuoteExcel() {
+    if (!exportUnlocked) {
+      setMessage("Pay once to unlock Excel and PDF export for this quotation session.");
+      return;
+    }
     if (!readyLines.length) {
       setMessage("No approved quotation lines are ready to export.");
       return;
@@ -289,6 +339,10 @@ export default function QuoteWorkspace() {
   }
 
   function printQuotation() {
+    if (!exportUnlocked) {
+      setMessage("Pay once to unlock Excel and PDF export for this quotation session.");
+      return;
+    }
     if (!readyLines.length) {
       setMessage("No approved quotation lines are ready to print.");
       return;
@@ -472,12 +526,24 @@ export default function QuoteWorkspace() {
 
       <div className="export-row">
         <div>
-          <strong>Generate quotation</strong>
-          <span>Only Ready lines are included. Review and Blocked lines remain excluded.</span>
+          <strong>{exportUnlocked ? "Quotation export unlocked" : "Export this quotation · US$29"}</strong>
+          <span>
+            {exportUnlocked
+              ? "Only Ready lines are included. Review and Blocked lines remain excluded."
+              : "Review your quotation first. Pay once only when you are ready to export Excel or PDF."}
+          </span>
         </div>
         <div className="export-actions">
-          <button type="button" className="secondary-button" onClick={downloadQuoteExcel}>Download Excel</button>
-          <button type="button" onClick={printQuotation}>Print / Save PDF</button>
+          {exportUnlocked ? (
+            <>
+              <button type="button" className="secondary-button" onClick={downloadQuoteExcel}>Download Excel</button>
+              <button type="button" onClick={printQuotation}>Print / Save PDF</button>
+            </>
+          ) : (
+            <button type="button" onClick={startCheckout} disabled={checkoutBusy || !readyLines.length}>
+              {checkoutBusy ? "Opening checkout..." : "Pay US$29 & unlock export"}
+            </button>
+          )}
         </div>
       </div>
 
