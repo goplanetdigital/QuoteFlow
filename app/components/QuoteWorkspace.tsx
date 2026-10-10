@@ -288,81 +288,103 @@ export default function QuoteWorkspace() {
     setMessage("Quotation Excel generated from approved lines only.");
   }
 
-  function printQuotation() {
+  function downloadPdf() {
     if (!readyLines.length) {
-      setMessage("No approved quotation lines are ready to print.");
+      setMessage("No approved quotation lines are ready to export.");
       return;
     }
 
-    const win = window.open("", "_blank");
-    if (!win) {
-      setMessage("Pop-up was blocked. Allow pop-ups to print or save the quotation as PDF.");
-      return;
+    // Generate the PDF directly as a downloadable file, without pop-ups or print dialogs.
+    const ascii = (value: unknown) => String(value ?? "").replace(/[^\x20-\x7E]/g, "?");
+    const pdfEscape = (value: unknown) => ascii(value).replaceAll("\\", "\\\\").replaceAll("(", "\\(").replaceAll(")", "\\)");
+    const pages: string[][] = [[]];
+    let y = 790;
+    const add = (value: unknown, x = 45, size = 10) => {
+      if (y < 55) {
+        pages.push([]);
+        y = 790;
+      }
+      pages[pages.length - 1].push(`BT /F1 ${size} Tf 1 0 0 1 ${x} ${y} Tm (${pdfEscape(value)}) Tj ET`);
+      y -= size + 8;
+    };
+    const wrap = (value: unknown, limit = 85) => {
+      const words = ascii(value).split(/\s+/);
+      const result: string[] = [];
+      let current = "";
+      for (const word of words) {
+        if (current && (current + " " + word).length > limit) {
+          result.push(current);
+          current = word;
+        } else {
+          current = current ? current + " " + word : word;
+        }
+        while (current.length > limit) {
+          result.push(current.slice(0, limit));
+          current = current.slice(limit);
+        }
+      }
+      if (current) result.push(current);
+      return result.length ? result : [""];
+    };
+    add("QUOTATION", 45, 20);
+    y -= 8;
+    add("Supplier: " + meta.supplierName);
+    add("Customer: " + meta.customerName);
+    add("Quote: " + meta.quoteNumber);
+    add("Valid: " + meta.validDays + " days");
+    add("Source: " + sourceName);
+    y -= 14;
+    add("APPROVED ITEMS", 45, 13);
+    readyLines.forEach((line, index) => {
+      const description = line.matchedDescription ?? line.description;
+      wrap(`${index + 1}. ${line.matchedCode ?? line.code} - ${description}`, 78).forEach((part) => add(part));
+      add(`Qty: ${line.quantity} ${line.unit}  |  Unit: ${meta.currency} ${(line.approvedUnitPrice ?? 0).toFixed(2)}  |  Total: ${meta.currency} ${(line.lineTotal ?? 0).toFixed(2)}`, 60);
+      y -= 7;
+    });
+    y -= 8;
+    add(`APPROVED SUBTOTAL: ${meta.currency} ${quote.subtotal.toFixed(2)}`, 45, 13);
+    if (meta.notes) {
+      y -= 10;
+      add("NOTES", 45, 12);
+      wrap(meta.notes).forEach((part) => add(part));
     }
+    y -= 14;
+    wrap("Only reviewer-approved lines with approved catalogue prices are included.").forEach((part) => add(part, 45, 9));
 
-    // Detach the printable window from the application before writing user content.
-    win.opener = null;
-
-    const rows = readyLines
-      .map(
-        (line, index) => `
-          <tr>
-            <td>${index + 1}</td>
-            <td>${escapeHtml(line.matchedCode ?? line.code)}</td>
-            <td>${escapeHtml(line.matchedDescription ?? line.description)}</td>
-            <td class="num">${line.quantity}</td>
-            <td>${escapeHtml(line.unit)}</td>
-            <td class="num">${meta.currency} ${(line.approvedUnitPrice ?? 0).toFixed(2)}</td>
-            <td class="num">${meta.currency} ${(line.lineTotal ?? 0).toFixed(2)}</td>
-          </tr>
-        `
-      )
-      .join("");
-
-    win.document.write(`
-      <!doctype html>
-      <html>
-      <head>
-        <title>${escapeHtml(meta.quoteNumber)} - Quotation</title>
-        <style>
-          body{font-family:Arial,sans-serif;margin:44px;color:#15171a}
-          .top{display:flex;justify-content:space-between;gap:24px;margin-bottom:36px}
-          h1{font-size:30px;margin:0 0 8px}.muted{color:#68707a}
-          .meta{line-height:1.7;text-align:right}
-          table{width:100%;border-collapse:collapse;margin-top:24px}
-          th,td{border-bottom:1px solid #ddd;padding:10px 8px;text-align:left;font-size:12px}
-          th{background:#f4f5f7;text-transform:uppercase;font-size:10px;letter-spacing:.06em}
-          .num{text-align:right}.total{margin-top:24px;text-align:right;font-size:18px;font-weight:700}
-          .notes{margin-top:32px;padding-top:18px;border-top:1px solid #ddd;white-space:pre-wrap}
-          .foot{margin-top:42px;font-size:10px;color:#7a818a}
-          @media print{body{margin:20mm}.no-print{display:none}}
-        </style>
-      </head>
-      <body>
-        <div class="top">
-          <div>
-            <h1>QUOTATION</h1>
-            <strong>${escapeHtml(meta.supplierName)}</strong>
-            <div class="muted">Prepared from ${escapeHtml(sourceName)}</div>
-          </div>
-          <div class="meta">
-            <div><strong>Quote:</strong> ${escapeHtml(meta.quoteNumber)}</div>
-            <div><strong>Customer:</strong> ${escapeHtml(meta.customerName)}</div>
-            <div><strong>Valid:</strong> ${escapeHtml(meta.validDays)} days</div>
-          </div>
-        </div>
-        <table>
-          <thead><tr><th>#</th><th>Code</th><th>Description</th><th>Qty</th><th>Unit</th><th>Unit price</th><th>Total</th></tr></thead>
-          <tbody>${rows}</tbody>
-        </table>
-        <div class="total">Approved subtotal: ${escapeHtml(meta.currency)} ${quote.subtotal.toFixed(2)}</div>
-        ${meta.notes ? `<div class="notes"><strong>Notes</strong><br/>${escapeHtml(meta.notes)}</div>` : ""}
-        <div class="foot">Generated by QuoteFlow. Only reviewer-approved lines with approved catalogue prices are included.</div>
-        <script>window.onload=()=>window.print();</script>
-      </body></html>
-    `);
-    win.document.close();
-    setMessage("Quotation opened for printing. Choose “Save as PDF” in the print dialog for a PDF copy.");
+    const objects: string[] = [];
+    const put = (value: string) => { objects.push(value); return objects.length; };
+    const catalogId = put("");
+    const pagesId = put("");
+    const fontId = put("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>");
+    const pageIds: number[] = [];
+    for (const commands of pages) {
+      const stream = commands.join("\n") + "\n";
+      const contentId = put(`<< /Length ${stream.length} >>\nstream\n${stream}endstream`);
+      const pageId = put(`<< /Type /Page /Parent ${pagesId} 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 ${fontId} 0 R >> >> /Contents ${contentId} 0 R >>`);
+      pageIds.push(pageId);
+    }
+    objects[catalogId - 1] = `<< /Type /Catalog /Pages ${pagesId} 0 R >>`;
+    objects[pagesId - 1] = `<< /Type /Pages /Kids [${pageIds.map((id) => id + " 0 R").join(" ")}] /Count ${pageIds.length} >>`;
+    let pdf = "%PDF-1.4\n";
+    const offsets = [0];
+    objects.forEach((obj, index) => {
+      offsets.push(pdf.length);
+      pdf += `${index + 1} 0 obj\n${obj}\nendobj\n`;
+    });
+    const xref = pdf.length;
+    pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+    offsets.slice(1).forEach((offset) => { pdf += String(offset).padStart(10, "0") + " 00000 n \n"; });
+    pdf += `trailer\n<< /Size ${objects.length + 1} /Root ${catalogId} 0 R >>\nstartxref\n${xref}\n%%EOF`;
+    const blob = new Blob([pdf], { type: "application/pdf" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = (meta.quoteNumber.replace(/[^a-zA-Z0-9_-]/g, "_") || "quotation") + ".pdf";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+    setMessage("Quotation PDF downloaded. Only approved lines were included.");
   }
 
   return (
@@ -480,7 +502,7 @@ export default function QuoteWorkspace() {
         </div>
         <div className="export-actions">
           <button type="button" className="secondary-button" onClick={downloadQuoteExcel}>Download Excel</button>
-          <button type="button" onClick={printQuotation}>Print / Save PDF</button>
+          <button type="button" onClick={downloadPdf}>Download PDF</button>
         </div>
       </div>
 
