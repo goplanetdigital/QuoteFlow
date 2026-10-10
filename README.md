@@ -22,3 +22,9 @@ Upload → Extract → Match → Review → Price → Export
 ## Preview validation
 
 Vercel is connected to this repository. Feature branches are validated with Vercel Preview before merging into `main`.
+
+## Issue #6: test payments and private quotation delivery
+
+The local Issue #6 implementation ties one immutable reviewed quotation to one test Checkout session. Only a signed, paid webhook can generate private Excel and printable results. Customer jobs and uploads persist in PostgreSQL and are authorized by job-specific browser cookies.
+
+See [setup, tests and release gates](docs/issue-6-deployment.md). Live Stripe keys are rejected. Publication and real Stripe test acceptance remain subject to owner approval.

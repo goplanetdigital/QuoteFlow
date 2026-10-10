@@ -58,7 +58,7 @@ function overlapScore(a: string, b: string) {
 }
 
 export function matchLine(line: RfqLine, catalogue: CatalogueItem[] = demoCatalogue): QuoteLine {
-  const exact = catalogue.find((item) => normalize(item.code) === normalize(line.code));
+  const exact = normalize(line.code) ? catalogue.find((item) => normalize(item.code) === normalize(line.code)) : undefined;
   const scored = catalogue
     .map((item) => ({
       item,
@@ -87,7 +87,7 @@ export function matchLine(line: RfqLine, catalogue: CatalogueItem[] = demoCatalo
   const price = matched?.approvedUnitPrice ?? null;
 
   const reviewStatus: ReviewStatus =
-    matchStatus === "unmatched" || price === null
+    matchStatus === "unmatched" || price === null || !Number.isFinite(price) || price < 0 || normalize(matched?.unit ?? "") !== normalize(line.unit)
       ? "blocked"
       : matchStatus === "possible"
         ? "review"
@@ -146,11 +146,28 @@ function splitCsvRow(row: string) {
   return values;
 }
 
+function csvRecords(text: string) {
+  const rows: string[] = [];
+  let row = "";
+  let quoted = false;
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+    if (char === '"') {
+      row += char;
+      if (quoted && text[i + 1] === '"') { row += text[++i]; }
+      else quoted = !quoted;
+    } else if ((char === "\n" || char === "\r") && !quoted) {
+      if (row.trim()) rows.push(row.trim()); row = "";
+      if (char === "\r" && text[i + 1] === "\n") i++;
+    } else row += char;
+  }
+  if (quoted) return [];
+  if (row.trim()) rows.push(row.trim());
+  return rows;
+}
+
 export function parseCsv(text: string): RfqLine[] {
-  const rows = text
-    .split(/\r?\n/)
-    .map((row) => row.trim())
-    .filter(Boolean);
+  const rows = csvRecords(text);
 
   if (rows.length < 2) return [];
 
@@ -170,18 +187,15 @@ export function parseCsv(text: string): RfqLine[] {
         id: String(index + 1),
         code: codeIndex >= 0 ? cols[codeIndex] ?? "" : "",
         description: cols[descIndex] ?? "",
-        quantity: Number(cols[qtyIndex] ?? 0) || 0,
+        quantity: Number(cols[qtyIndex] ?? ""),
         unit: unitIndex >= 0 ? cols[unitIndex] ?? "pcs" : "pcs"
       };
     })
-    .filter((line) => line.description && line.quantity > 0);
+    .filter((line) => line.description || line.code);
 }
 
 export function parseCatalogueCsv(text: string): CatalogueItem[] {
-  const rows = text
-    .split(/\r?\n/)
-    .map((row) => row.trim())
-    .filter(Boolean);
+  const rows = csvRecords(text);
 
   if (rows.length < 2) return [];
 
@@ -199,7 +213,7 @@ export function parseCatalogueCsv(text: string): CatalogueItem[] {
     .slice(1)
     .map((row) => {
       const cols = splitCsvRow(row);
-      const rawPrice = String(cols[priceIndex] ?? "").replace(/[^0-9.-]/g, "");
+      const rawPrice = String(cols[priceIndex] ?? "").trim().replace(/^(?:[A-Z]{3}\s*|[$€£]\s*)/, "").replace(/,(?=\d{3}(?:\D|$))/g, "");
       const parsedPrice = rawPrice ? Number(rawPrice) : NaN;
 
       return {
@@ -209,7 +223,7 @@ export function parseCatalogueCsv(text: string): CatalogueItem[] {
         approvedUnitPrice: Number.isFinite(parsedPrice) ? parsedPrice : null
       };
     })
-    .filter((item) => item.description);
+    .filter((item) => item.description || item.code);
 }
 
 

@@ -1,12 +1,15 @@
+import { boundedBody, failure } from "../../../lib/server/http";
+import { MAX_UPLOAD, MAX_BODY } from "../../../lib/server/input";
 import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
 
-const MAX_PDF_BYTES = 10 * 1024 * 1024;
+const MAX_PDF_BYTES = MAX_UPLOAD;
 
 export async function POST(request: Request) {
   try {
-    const form = await request.formData();
+    const body = await boundedBody(request, MAX_BODY);
+    const form = await new Request(request.url, { method: "POST", headers: { "Content-Type": request.headers.get("content-type") ?? "" }, body: new Uint8Array(body) }).formData();
     const file = form.get("file");
 
     if (!(file instanceof File)) {
@@ -15,7 +18,7 @@ export async function POST(request: Request) {
 
     if (file.size <= 0 || file.size > MAX_PDF_BYTES) {
       return NextResponse.json(
-        { error: "PDF must be between 1 byte and 10 MB." },
+        { error: "PDF must be between 1 byte and 1.5 MB." },
         { status: 400 }
       );
     }
@@ -28,7 +31,7 @@ export async function POST(request: Request) {
     }
 
     const bytes = new Uint8Array(await file.arrayBuffer());
-    const pdfParse = (await import("pdf-parse")).default;
+    const pdfParse = (await import("pdf-parse/lib/pdf-parse.js")).default;
     const parsed = await pdfParse(bytes);
 
     const text = String(parsed.text ?? "").trim();
@@ -49,11 +52,5 @@ export async function POST(request: Request) {
       pages: parsed.numpages ?? null,
       filename: file.name
     });
-  } catch (error) {
-    console.error("QuoteFlow PDF extraction failed", error);
-    return NextResponse.json(
-      { error: "Unable to extract this PDF. Please try CSV or Excel if the PDF is scanned." },
-      { status: 500 }
-    );
-  }
+  } catch (error) { return failure(error); }
 }
