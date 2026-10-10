@@ -58,6 +58,7 @@ function defaultQuoteNumber() {
 export default function QuoteWorkspace() {
   const [paymentStatus, setPaymentStatus] = useState<"unpaid" | "checking" | "paid">("unpaid");
   const [checkoutBusy, setCheckoutBusy] = useState(false);
+  const [authorizedPayload, setAuthorizedPayload] = useState<string | null>(null);
   const [paymentError, setPaymentError] = useState("");
   const [rfqLines, setRfqLines] = useState<RfqLine[]>(demoRfq);
   const [catalogue, setCatalogue] = useState<CatalogueItem[]>(demoCatalogue);
@@ -128,6 +129,14 @@ export default function QuoteWorkspace() {
   );
 
   const quotationPayload = JSON.stringify({ rfqLines, catalogue, manualMatches, meta, sourceName });
+  useEffect(() => {
+    if (paymentStatus === "paid" && authorizedPayload !== quotationPayload) {
+      setPaymentStatus("unpaid");
+      setAuthorizedPayload(null);
+      setPaymentError("Quotation changed. A new payment is required for the updated quotation.");
+    }
+  }, [quotationPayload, paymentStatus, authorizedPayload]);
+
   async function quotationFingerprint() {
     const data = new TextEncoder().encode(quotationPayload);
     const hash = await crypto.subtle.digest("SHA-256", data);
@@ -157,6 +166,7 @@ export default function QuoteWorkspace() {
         const fingerprint = Array.from(new Uint8Array(hash)).map((byte) => byte.toString(16).padStart(2, "0")).join("");
         return fetch("/api/verify-payment", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sessionId, fingerprint }) });
       }).then((response) => response.json()).then((result) => {
+        if (result.paid) setAuthorizedPayload(payload);
         setPaymentStatus(result.paid ? "paid" : "unpaid");
         if (!result.paid) setPaymentError("Payment not verified.");
       }).catch(() => { setPaymentStatus("unpaid"); setPaymentError("Could not verify payment."); });
@@ -305,7 +315,7 @@ export default function QuoteWorkspace() {
   }
 
   async function downloadQuoteExcel() {
-    if (paymentStatus !== "paid") { setPaymentError("Complete payment before downloading."); return; }
+    if (paymentStatus !== "paid" || authorizedPayload !== quotationPayload) { setPaymentStatus("unpaid"); setPaymentError("Payment required for this exact quotation."); return; }
     if (!readyLines.length) {
       setMessage("No approved quotation lines are ready to export.");
       return;
