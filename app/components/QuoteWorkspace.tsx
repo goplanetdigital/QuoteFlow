@@ -144,33 +144,57 @@ export default function QuoteWorkspace() {
   }
 
   useEffect(() => {
-    setPaymentStatus("unpaid");
-    const sessionId = new URLSearchParams(window.location.search).get("session_id");
-    if (!sessionId) return;
-    const saved = sessionStorage.getItem("quoteflow_pending");
+    const params = new URLSearchParams(window.location.search);
+    const returnedSessionId = params.get("session_id");
+    const stored = localStorage.getItem("quoteflow_paid_receipt");
+    const pending = sessionStorage.getItem("quoteflow_pending");
+    const saved = returnedSessionId ? pending || stored : stored;
     if (!saved) return;
+
     try {
-      const pending = JSON.parse(saved);
-      if (pending.sessionId && pending.sessionId !== sessionId) return;
-      const payload = pending.payload as string;
-      if (!payload) return;
+      const receipt = JSON.parse(saved) as { payload?: string; sessionId?: string };
+      const sessionId = returnedSessionId || receipt.sessionId;
+      const payload = receipt.payload;
+      if (!sessionId || !payload || (returnedSessionId && receipt.sessionId && receipt.sessionId !== returnedSessionId)) return;
       const snapshot = JSON.parse(payload);
+      if (!Array.isArray(snapshot.rfqLines) || !Array.isArray(snapshot.catalogue) || !snapshot.meta) return;
+      setPaymentStatus("checking");
       setRfqLines(snapshot.rfqLines);
       setCatalogue(snapshot.catalogue);
-      setManualMatches(snapshot.manualMatches);
+      setManualMatches(snapshot.manualMatches || {});
       setMeta(snapshot.meta);
-      setSourceName(snapshot.sourceName);
-      setPaymentStatus("checking");
+      setSourceName(snapshot.sourceName || "");
       const bytes = new TextEncoder().encode(payload);
       crypto.subtle.digest("SHA-256", bytes).then((hash) => {
         const fingerprint = Array.from(new Uint8Array(hash)).map((byte) => byte.toString(16).padStart(2, "0")).join("");
-        return fetch("/api/verify-payment", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sessionId, fingerprint }) });
-      }).then((response) => response.json()).then((result) => {
-        if (result.paid) setAuthorizedPayload(payload);
-        setPaymentStatus(result.paid ? "paid" : "unpaid");
-        if (!result.paid) setPaymentError("Payment not verified.");
-      }).catch(() => { setPaymentStatus("unpaid"); setPaymentError("Could not verify payment."); });
-    } catch { setPaymentStatus("unpaid"); }
+        return fetch("/api/verify-payment", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sessionId, fingerprint })
+        });
+      }).then((response) => {
+        if (!response.ok) throw new Error("Verification unavailable");
+        return response.json();
+      }).then((result) => {
+        if (result.paid) {
+          setAuthorizedPayload(payload);
+          setPaymentStatus("paid");
+          localStorage.setItem("quoteflow_paid_receipt", JSON.stringify({ sessionId, payload }));
+          sessionStorage.removeItem("quoteflow_pending");
+          if (returnedSessionId) window.history.replaceState({}, "", window.location.pathname);
+          setPaymentError("");
+        } else {
+          setPaymentStatus("unpaid");
+          setPaymentError("Saved payment could not be verified.");
+          localStorage.removeItem("quoteflow_paid_receipt");
+        }
+      }).catch(() => {
+        setPaymentStatus("unpaid");
+        setPaymentError("Could not verify saved payment. Please try refreshing.");
+      });
+    } catch {
+      setPaymentStatus("unpaid");
+    }
   }, []);
 
   async function startCheckout() {
