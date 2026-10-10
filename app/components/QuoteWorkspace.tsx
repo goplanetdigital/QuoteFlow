@@ -364,7 +364,7 @@ export default function QuoteWorkspace() {
       drawText("#", 48, 607, 9);
       drawText("ITEM / DESCRIPTION", 78, 607, 9);
       rightText("QTY", 368, 607, 9);
-      rightText("UNIT", 447, 607, 9);
+      rightText("UNIT PRICE", 447, 607, 9);
       rightText("TOTAL", 548, 607, 9);
       rule(595);
       y = 576;
