@@ -177,6 +177,34 @@ export function parseCsv(text: string): RfqLine[] {
     .filter((line) => line.description && line.quantity > 0);
 }
 
+export function detectCatalogueCurrency(text: string): string | null {
+  const rows = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  if (!rows.length) return null;
+  const headers = splitCsvRow(rows[0]).map((h) => normalize(h));
+  const currencyIndex = headers.findIndex((h) => ["currency", "currency code", "price currency", "curr"].includes(h));
+  const priceIndex = headers.findIndex((h) => ["price", "unit price", "unitprice", "approved price", "approved unit price", "selling price"].includes(h));
+  const recognized = new Set(["USD", "MYR", "SGD", "EUR", "GBP", "AUD", "CAD", "JPY", "CNY", "HKD", "INR", "THB", "IDR", "PHP", "AED", "SAR", "NZD", "CHF"]);
+  const found = new Set<string>();
+  for (const row of rows.slice(1)) {
+    const cols = splitCsvRow(row);
+    const explicit = currencyIndex >= 0 ? String(cols[currencyIndex] ?? "").trim().toUpperCase() : "";
+    if (explicit) {
+      if (!recognized.has(explicit)) return null;
+      found.add(explicit);
+      continue;
+    }
+    const price = priceIndex >= 0 ? String(cols[priceIndex] ?? "").trim() : "";
+    const code = price.match(/\b(USD|MYR|SGD|EUR|GBP|AUD|CAD|JPY|CNY|HKD|INR|THB|IDR|PHP|AED|SAR|NZD|CHF)\b/i);
+    if (code) found.add(code[1].toUpperCase());
+    else if (/RM\s*\d/i.test(price)) found.add("MYR");
+    else if (/S\$\s*\d/i.test(price)) found.add("SGD");
+    else if (/€\s*\d/.test(price)) found.add("EUR");
+    else if (/£\s*\d/.test(price)) found.add("GBP");
+    // A bare $ is ambiguous across USD, SGD, AUD, CAD and other currencies.
+  }
+  return found.size === 1 ? [...found][0] : null;
+}
+
 export function parseCatalogueCsv(text: string): CatalogueItem[] {
   const rows = text
     .split(/\r?\n/)
