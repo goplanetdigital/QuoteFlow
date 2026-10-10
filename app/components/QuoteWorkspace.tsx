@@ -58,6 +58,7 @@ function defaultQuoteNumber() {
 export default function QuoteWorkspace() {
   const [paymentStatus, setPaymentStatus] = useState<"unpaid" | "checking" | "paid">("unpaid");
   const [checkoutBusy, setCheckoutBusy] = useState(false);
+  const [testPriceMode, setTestPriceMode] = useState(false);
   const [authorizedPayload, setAuthorizedPayload] = useState<string | null>(null);
   const [paymentError, setPaymentError] = useState("");
   const [rfqLines, setRfqLines] = useState<RfqLine[]>(demoRfq);
@@ -112,6 +113,13 @@ export default function QuoteWorkspace() {
       blockedCount: lines.filter((line) => line.reviewStatus === "blocked").length
     };
   }, [rfqLines, catalogue, manualMatches]);
+
+  useEffect(() => {
+    fetch("/api/checkout-config", { cache: "no-store" })
+      .then((response) => response.json())
+      .then((config) => setTestPriceMode(config.testPriceMode === true))
+      .catch(() => setTestPriceMode(false));
+  }, []);
 
   const pricing = useMemo(() => {
     const count = rfqLines.length;
@@ -663,12 +671,12 @@ export default function QuoteWorkspace() {
 
       <div className="guardrail">
         <strong>QuoteFlow export pricing (USD)</strong>
-        <span>{rfqLines.length} RFQ item(s) · {pricing.label} · {pricing.amount === null ? "Contact us for pricing" : `USD ${pricing.amount.toFixed(2)} per quotation`}. One payment will cover PDF and Excel of the same quotation. Stripe payment is required to unlock exports.</span>
+        <span>{rfqLines.length} RFQ item(s) · {pricing.label} · {pricing.amount === null ? "Contact us for pricing" : `USD ${(testPriceMode ? 1 : pricing.amount).toFixed(2)} per quotation`}. One payment will cover PDF and Excel of the same quotation. Stripe payment is required to unlock exports.</span>
       </div>
 
       <div className="export-row">
         <div>
-          <strong>Stripe checkout · {process.env.NEXT_PUBLIC_QUOTE_TEST_MODE === "true" ? "USD 1.00 TEST" : "USD " + (pricing.amount?.toFixed(2) ?? "custom")}</strong>
+          <strong>Stripe checkout · {testPriceMode ? "USD 1.00 TEST" : "USD " + (pricing.amount?.toFixed(2) ?? "custom")}</strong>
           <span>{paymentStatus === "paid" ? "Payment verified. PDF and Excel unlocked." : paymentStatus === "checking" ? "Verifying payment..." : "Pay to unlock both downloads."}</span>
           {paymentError ? <span role="alert">{paymentError}</span> : null}
         </div>
