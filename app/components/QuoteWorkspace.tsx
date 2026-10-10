@@ -300,7 +300,11 @@ export default function QuoteWorkspace() {
       return;
     }
 
-    // Detach the printable window from the application before writing user content.\n    win.opener = null;\n\n    const rows = readyLines\n      .map(
+    // Detach the printable window from the application before writing user content.
+    win.opener = null;
+
+    const rows = readyLines
+      .map(
         (line, index) => `
           <tr>
             <td>${index + 1}</td>
