@@ -84,3 +84,7 @@ Do not modify TimeEase, Shopify, Payhip, n8n or Stripe live settings. Do not pus
 ## Spreadsheet security update for PR #7
 
 All uploads now use the same bounded server spreadsheet validation for preview and job creation. Excel delivery awaits the maintained writer inside the existing atomic payment transaction. See [security checks, tests, compatibility and remaining risks](spreadsheet-security.md).
+
+## Preview preparation update
+
+Use [the PR #7 Preview runbook](vercel-preview-testing.md) for the current environment matrix, dedicated database/runtime grants, distributed upload limits and real hosted test runner. Hosted migrations and real Stripe test-card acceptance remain blocked by missing infrastructure/credentials. Local simulator checks do not count as hosted acceptance. The migration runner now applies both numbered migrations; upload admission requires the shared database and `UPLOAD_ABUSE_SECRET`.

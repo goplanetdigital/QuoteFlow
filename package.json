@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit",
     "db:migrate": "node --import tsx scripts/migrate.ts",
     "test:e2e": "playwright test",
-    "db:cleanup": "node --import tsx scripts/cleanup.ts"
+    "db:cleanup": "node --import tsx scripts/cleanup.ts",
+    "test:preview": "playwright test --config playwright.preview.config.ts"
   },
   "dependencies": {
     "fflate": "0.8.3",

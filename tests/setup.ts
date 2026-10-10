@@ -1,7 +1,8 @@
+import { migrate } from "../lib/server/migrations";
 import EmbeddedPostgres from "embedded-postgres";
 import { createServer } from "node:http";
 import { spawn } from "node:child_process";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import Stripe from "stripe";
@@ -25,7 +26,8 @@ export default async function setup() {
     "postgresql://qf_test:local_test_only@localhost:55436/quoteflow_test";
   process.env.QF_TEST_DATABASE_URL = dbUrl;
   const db = new Pool({ connectionString: dbUrl });
-  await db.query(await readFile("db/001_jobs.sql", "utf8"));
+  await migrate(db);
+  await migrate(db); // Idempotent preparation, also exercises the upgrade migration.
   await db.end();
   const appOrigin = "http://localhost:3100",
     mockOrigin = "http://localhost:3101",
@@ -110,6 +112,10 @@ export default async function setup() {
         env: {
           ...process.env,
           DATABASE_URL: dbUrl,
+          UPLOAD_ABUSE_SECRET: "local_abuse_secret_for_tests_only_32_chars",
+          QF_DATABASE_SCOPE: "preview",
+          QF_DATABASE_NAME: "quoteflow_test",
+          NEXT_PUBLIC_SUPPORT_EMAIL: "test@example.invalid",
           SITE_URL: appOrigin,
           STRIPE_SECRET_KEY: "sk_test_local_testing_only",
           STRIPE_WEBHOOK_SECRET: secret,

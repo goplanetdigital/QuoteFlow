@@ -81,3 +81,11 @@ No TimeEase, Shopify, Payhip, n8n or Stripe live settings were changed. Publicat
 ## PR #7 spreadsheet security follow-up
 
 The sole vulnerable path was the direct `xlsx@0.18.5` dependency (prototype pollution GHSA-4r6h-8v6p-xvw6; ReDoS GHSA-5pgg-2g8v-p4x9). Browser/server parsing and quotation/test generation now use maintained alternatives; no SheetJS code remains in the lockfile. The sixth integration scenario rejects malicious formulas through browser preview and direct job submission, confirms no job is saved, and checks malformed and cross-origin uploads. Compatibility restrictions and residual risks are documented in [spreadsheet-security.md](spreadsheet-security.md).
+
+## Preview environment preparation follow-up
+
+Shared Postgres upload quotas/concurrency leases, trusted origins, body deadlines and a new migration are added. Dedicated hosted database name/scope and verified TLS are enforced. A readiness endpoint and separate real Preview/Stripe test-card runner are prepared. The observed existing Preview Checkout endpoint returned 503 because test payments are unconfigured; its branch environment list was empty and no Neon integration was listed. Hosted database migration and real card acceptance have not run. Follow [the Preview runbook](vercel-preview-testing.md) for owner actions; no local simulator result establishes hosted payment acceptance.
+
+Six settings are now verified as Preview/feature-branch only (trusted stable origin, database scope/name, fee/currency and sensitive upload HMAC secret); the four missing settings are the database URL, Stripe test API/signing keys and confirmed support contact. No external database was provisioned, no hosted migration ran, and no real hosted payment passed. Local linkage metadata is ignored by Git.
+
+Latest local follow-up verification: 29 unit tests and 11 Chromium/API/PostgreSQL scenarios passed; TypeScript, production build and full npm audit passed (zero known vulnerabilities). Gitleaks found no leaks in the 61-file publication source. Hosted runner preflight correctly rejects a missing Preview origin; no real card has been entered or hosted payment completed.

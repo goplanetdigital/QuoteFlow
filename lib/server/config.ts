@@ -6,11 +6,19 @@ export class AppError extends Error {
     super(message);
   }
 }
-export function paymentConfig() {
-  const key = process.env.STRIPE_SECRET_KEY ?? "";
-  const amount = Number(process.env.QUOTE_EXPORT_AMOUNT);
-  const currency = (process.env.QUOTE_EXPORT_CURRENCY ?? "").toLowerCase();
-  const site = new URL(process.env.SITE_URL ?? "http://localhost:3000");
+export function applicationOrigin(env: Readonly<Record<string, string | undefined>> = process.env) {
+  try {
+    if (env.VERCEL === "1" && !env.SITE_URL) throw new Error();
+    const site = new URL(env.SITE_URL ?? "http://localhost:3000");
+    if ((site.protocol !== "https:" && !(site.protocol === "http:" && site.hostname === "localhost")) || site.username || site.password || site.pathname !== "/" || site.search || site.hash) throw new Error();
+    return site.origin;
+  } catch { throw new AppError(503, "The application URL is not configured."); }
+}
+export function paymentConfig(env: Readonly<Record<string, string | undefined>> = process.env) {
+  const key = env.STRIPE_SECRET_KEY ?? "";
+  const amount = Number(env.QUOTE_EXPORT_AMOUNT);
+  const currency = (env.QUOTE_EXPORT_CURRENCY ?? "").toLowerCase();
+  const origin = applicationOrigin(env);
   if (
     !key.startsWith("sk_test_") ||
     !Number.isSafeInteger(amount) ||
@@ -23,13 +31,5 @@ export function paymentConfig() {
       "Test payments are not configured. Please contact support.",
     );
   }
-  if (
-    (site.protocol !== "https:" &&
-      !(site.protocol === "http:" && site.hostname === "localhost")) ||
-    site.username ||
-    site.password
-  ) {
-    throw new AppError(503, "The application URL is not configured.");
-  }
-  return { key, amount, currency, origin: site.origin };
+  return { key, amount, currency, origin };
 }

@@ -1,9 +1,9 @@
-import { readFile } from "node:fs/promises";
+import { migrate } from "../lib/server/migrations";
 import { database } from "../lib/server/store";
 async function main() {
   const db = database();
   try {
-    await db.query(await readFile("db/001_jobs.sql", "utf8"));
+    await migrate(db);
     console.log("QuoteFlow schema ready.");
   } finally {
     await db.end();

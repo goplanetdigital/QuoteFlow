@@ -30,3 +30,5 @@ The local Issue #6 implementation ties one immutable reviewed quotation to one t
 See [setup, tests and release gates](docs/issue-6-deployment.md). Live Stripe keys are rejected. Publication and real Stripe test acceptance remain subject to owner approval.
 
 Spreadsheet imports support CSV and values-only XLSX. Convert legacy XLS to XLSX or CSV; formulas, macros, external links and embedded binary content are rejected. See [spreadsheet security and compatibility](docs/spreadsheet-security.md).
+
+See the [Vercel Preview testing runbook](docs/vercel-preview-testing.md) for upload protection, dedicated database preparation, environment variables and the separate real Stripe test-card runner. Hosted acceptance remains blocked until Preview infrastructure and test credentials are supplied.

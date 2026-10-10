@@ -2,6 +2,7 @@ import { test, expect } from "@playwright/test";
 import Stripe from "stripe";
 import { Pool } from "pg";
 import { mkdir } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import writeXlsxFile from "write-excel-file/node";
 import { readSheet } from "read-excel-file/node";
 const origin = "http://localhost:3100";
@@ -116,6 +117,30 @@ async function savedSession(id: string) {
     await db.end();
   }
 }
+test("private original files and owner hashes stay isolated; expired jobs and guessed upload URLs are inaccessible", async ({ context, request }) => {
+  const id = await makeJob(context.request, 2);
+  const db = new Pool({ connectionString: process.env.QF_TEST_DATABASE_URL });
+  try {
+    const files = (await db.query("SELECT kind,content FROM qf_uploads WHERE job_id=$1 ORDER BY kind", [id])).rows;
+    expect(files).toHaveLength(2);
+    expect(files.find(f => f.kind === "rfq").content.toString()).toBe(rfq.replace("120,m", "2,m"));
+    expect(files.find(f => f.kind === "catalogue").content.toString()).toBe(catalogue);
+    const cookie = (await context.request.storageState()).cookies.find(c => c.name === `qf_job_${id}`)!;
+    const owner = (await db.query("SELECT owner_hash FROM qf_jobs WHERE id=$1", [id])).rows[0].owner_hash;
+    expect(owner).toBe(createHash("sha256").update(cookie.value).digest("hex"));
+    expect(owner).not.toBe(cookie.value);
+    const visible = await context.request.get(`/api/jobs/${id}`);
+    expect(visible.headers()["cache-control"]).toBe("private, no-store");
+    expect(await visible.text()).not.toContain(owner);
+    expect((await request.get(`/api/jobs/${id}`)).status()).toBe(404);
+    expect((await context.request.get(`/api/jobs/${id}/uploads/rfq`)).status()).toBe(404);
+    await db.query("UPDATE qf_jobs SET created_at=now()-interval '8 days' WHERE id=$1", [id]);
+    expect((await context.request.get(`/api/jobs/${id}`)).status()).toBe(404);
+    expect((await context.request.get(`/api/jobs/${id}/result?format=xlsx`)).status()).toBe(404);
+    await db.query("DELETE FROM qf_jobs WHERE id=$1", [id]);
+    expect(Number((await db.query("SELECT count(*) FROM qf_uploads WHERE job_id=$1", [id])).rows[0].count)).toBe(0);
+  } finally { await db.end(); }
+});
 test("browser upload → approve → frozen job → Checkout → signed payment → correct Excel and printable delivery", async ({
   page,
   context,

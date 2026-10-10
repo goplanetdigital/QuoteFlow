@@ -1,3 +1,4 @@
+import { databaseOptions } from "./database-config";
 import { Pool, PoolClient } from "pg";
 import { AppError } from "./config";
 import { Snapshot } from "./input";
@@ -27,14 +28,7 @@ export interface Store {
 }
 let pool: Pool | undefined;
 export function database() {
-  if (!process.env.DATABASE_URL)
-    throw new AppError(503, "Quotation storage is not configured.");
-  return (pool ??= new Pool({
-    connectionString: process.env.DATABASE_URL,
-    max: 3,
-    connectionTimeoutMillis: 5000,
-    idleTimeoutMillis: 10000,
-  }));
+  return (pool ??= new Pool(databaseOptions()));
 }
 export const store: Store = {
   async get(id) {

@@ -1,6 +1,7 @@
+import { UploadLimitError } from "./abuse";
 import { createHash } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
-import { AppError, paymentConfig } from "./config";
+import { AppError, applicationOrigin } from "./config";
 export function hashToken(token: string) {
   return createHash("sha256").update(token).digest("hex");
 }
@@ -18,7 +19,7 @@ export function validId(id: string) {
   return id;
 }
 export function sameOrigin(request: Request) {
-  if (request.headers.get("origin") !== paymentConfig().origin)
+  if (request.headers.get("origin") !== applicationOrigin())
     throw new AppError(
       403,
       "Please start checkout from the QuoteFlow workspace.",
@@ -28,7 +29,7 @@ export function failure(error: unknown) {
   if (error instanceof AppError)
     return NextResponse.json(
       { error: error.message },
-      { status: error.status, headers: { "Cache-Control": "no-store" } },
+      { status: error.status, headers: { "Cache-Control": "no-store", ...(error instanceof UploadLimitError ? { "Retry-After": String(error.retryAfter) } : {}) } },
     );
   console.error(
     "QuoteFlow request failed",
@@ -49,15 +50,24 @@ export async function boundedBody(request: Request, max: number) {
   if (!reader) throw new AppError(400, "Request body is required.");
   const chunks: Uint8Array[] = [];
   let size = 0;
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    size += value.byteLength;
-    if (size > max) {
-      await reader.cancel();
-      throw new AppError(413, "Upload is too large.");
+  let expired = false;
+  let timer: ReturnType<typeof setTimeout>;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      expired = true;
+      reject(new AppError(408, "Upload timed out. Please retry."));
+      void reader.cancel().catch(() => {});
+    }, 15000);
+  });
+  try {
+    while (true) {
+      const { done, value } = await Promise.race([reader.read(), timeout]);
+      if (expired) throw new AppError(408, "Upload timed out. Please retry.");
+      if (done) break;
+      size += value.byteLength;
+      if (size > max) { await reader.cancel(); throw new AppError(413, "Upload is too large."); }
+      chunks.push(value);
     }
-    chunks.push(value);
-  }
-  return Buffer.concat(chunks);
+    return Buffer.concat(chunks);
+  } finally { clearTimeout(timer!); }
 }
