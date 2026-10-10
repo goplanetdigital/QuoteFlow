@@ -5,6 +5,7 @@ import {
   buildQuote,
   CatalogueItem,
   demoCatalogue,
+  detectCatalogueCurrency,
   demoRfq,
   parseCatalogueCsv,
   parseCsv,
@@ -193,11 +194,13 @@ export default function QuoteWorkspace() {
         return;
       }
 
+      const detectedCurrency = detectCatalogueCurrency(csv);
       setCatalogue(parsed);
       setManualMatches({});
+      setMeta((current) => ({ ...current, currency: detectedCurrency ?? "" }));
       setCatalogueName(file.name);
       setMessage(
-        `Loaded ${parsed.length} catalogue item${parsed.length === 1 ? "." : "s."} Matching has been recalculated.`
+        `Loaded ${parsed.length} catalogue item${parsed.length === 1 ? "." : "s."} ${detectedCurrency ? `Detected currency: ${detectedCurrency}.` : "Currency could not be identified safely. Select the catalogue currency before exporting."} Matching has been recalculated.`
       );
     } catch {
       setMessage("Could not read that catalogue file. Please check its spreadsheet format.");
@@ -289,6 +292,10 @@ export default function QuoteWorkspace() {
   }
 
   function downloadPdf() {
+    if (!/^[A-Z]{3}$/.test(meta.currency)) {
+      setMessage("Select the catalogue currency before downloading PDF.");
+      return;
+    }
     if (!readyLines.length) {
       setMessage("No approved quotation lines are ready to export.");
       return;
