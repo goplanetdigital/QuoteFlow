@@ -22,3 +22,13 @@ Upload → Extract → Match → Review → Price → Export
 ## Preview validation
 
 Vercel is connected to this repository. Feature branches are validated with Vercel Preview before merging into `main`.
+
+## Issue #6: test payments and private quotation delivery
+
+The local Issue #6 implementation ties one immutable reviewed quotation to one test Checkout session. Only a signed, paid webhook can generate private Excel and printable results. Customer jobs and uploads persist in PostgreSQL and are authorized by job-specific browser cookies.
+
+See [setup, tests and release gates](docs/issue-6-deployment.md). Live Stripe keys are rejected. Publication and real Stripe test acceptance remain subject to owner approval.
+
+Spreadsheet imports support CSV and values-only XLSX. Convert legacy XLS to XLSX or CSV; formulas, macros, external links and embedded binary content are rejected. See [spreadsheet security and compatibility](docs/spreadsheet-security.md).
+
+See the [Vercel Preview testing runbook](docs/vercel-preview-testing.md) for upload protection, dedicated database preparation, environment variables and the separate real Stripe test-card runner. Hosted acceptance remains blocked until Preview infrastructure and test credentials are supplied.

@@ -5,19 +5,45 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "test": "node --import tsx --test --test-isolation=none tests/*.test.ts",
+    "typecheck": "tsc --noEmit",
+    "db:migrate": "node --import tsx scripts/migrate.ts",
+    "test:e2e": "playwright test",
+    "db:cleanup": "node --import tsx scripts/cleanup.ts",
+    "test:preview": "playwright test --config playwright.preview.config.ts"
   },
   "dependencies": {
-    "next": "15.5.24",
+    "fflate": "0.8.3",
+    "next": "15.5.27",
+    "pdf-parse": "^1.1.1",
+    "pg": "^8.23.1",
     "react": "19.1.1",
     "react-dom": "19.1.1",
-    "xlsx": "^0.18.5",
-    "pdf-parse": "^1.1.1"
+    "read-excel-file": "9.3.12",
+    "sax": "1.6.0",
+    "stripe": "^18.5.0",
+    "write-excel-file": "4.1.1",
+    "yauzl": "3.4.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.64.0",
+    "@sparticuz/chromium": "^153.0.0",
     "@types/node": "^22",
+    "@types/pg": "^8.23.1",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@types/sax": "1.2.7",
+    "@types/yauzl": "3.4.0",
+    "embedded-postgres": "^18.4.0-beta.17",
+    "nock": "^14.0.17",
+    "tsx": "^4.23.15",
     "typescript": "^5"
+  },
+  "engines": {
+    "node": "24.x"
+  },
+  "overrides": {
+    "postcss": "8.5.29"
   }
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { ChangeEvent, useMemo, useState } from "react";
+import { ChangeEvent, useEffect, useMemo, useState } from "react";
 import {
   buildQuote,
   CatalogueItem,
@@ -21,29 +21,14 @@ type QuoteMeta = {
   notes: string;
 };
 
-async function fileToCsv(file: File) {
-  const name = file.name.toLowerCase();
-
-  if (name.endsWith(".csv")) return file.text();
-
-  if (name.endsWith(".xlsx") || name.endsWith(".xls")) {
-    const XLSX = await import("xlsx");
-    const buffer = await file.arrayBuffer();
-    const workbook = XLSX.read(buffer, { type: "array" });
-    const firstSheetName = workbook.SheetNames[0];
-    if (!firstSheetName) return "";
-    return XLSX.utils.sheet_to_csv(workbook.Sheets[firstSheetName]);
-  }
-
-  return "";
-}
-
-function escapeHtml(value: string) {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;");
+async function fileToCsv(file: File, kind: "rfq" | "catalogue") {
+  const form = new FormData();
+  form.append("file", file);
+  form.append("kind", kind);
+  const response = await fetch("/api/extract-spreadsheet", { method: "POST", body: form });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error || "Could not read this spreadsheet.");
+  return String(data.csv);
 }
 
 function defaultQuoteNumber() {
@@ -63,6 +48,12 @@ export default function QuoteWorkspace() {
   const [message, setMessage] = useState(
     "Demo data loaded. Upload an RFQ and your approved catalogue."
   );
+  const [rfqFile, setRfqFile] = useState<File | null>(null);
+  const [catalogueFile, setCatalogueFile] = useState<File | null>(null);
+  const [pricesApproved, setPricesApproved] = useState(false);
+  const [fee, setFee] = useState<string | null>(null);
+  const [pendingJob, setPendingJob] = useState<string | null>(null);
+  const [checkoutBusy, setCheckoutBusy] = useState(false);
   const [meta, setMeta] = useState<QuoteMeta>({
     supplierName: "Your Company",
     customerName: "Customer",
@@ -89,7 +80,7 @@ export default function QuoteWorkspace() {
         approvedUnitPrice: price,
         lineTotal:
           price === null ? null : Number((price * line.quantity).toFixed(2)),
-        reviewStatus: price === null ? ("blocked" as const) : ("ready" as const)
+        reviewStatus: price === null || !Number.isFinite(price) || selected.unit.toLowerCase() !== line.unit.toLowerCase() ? ("blocked" as const) : ("ready" as const)
       };
     });
 
@@ -113,11 +104,41 @@ export default function QuoteWorkspace() {
     [quote.lines]
   );
 
+  useEffect(() => {
+    fetch("/api/checkout").then(async response => {
+      const data = await response.json();
+      if (!response.ok) { setMessage(data.error); return; }
+      setFee(new Intl.NumberFormat("en", { style: "currency", currency: data.currency }).format(data.amount / 100));
+    }).catch(() => setMessage("Payments are unavailable. You can continue reviewing your files."));
+  }, []);
+
+  async function startCheckout() {
+    if (!readyLines.length || !pricesApproved || !fee) return;
+    setCheckoutBusy(true);
+    try {
+      const csvRow = (values: (string | number | null)[]) => values.map(v => '"' + String(v ?? "").replaceAll('"', '""') + '"').join(",");
+      const rfqCsv = ["code,description,quantity,unit", ...rfqLines.map(l => csvRow([l.code,l.description,l.quantity,l.unit]))].join("\n");
+      const catalogueCsv = ["code,description,unit,price", ...catalogue.map(l => csvRow([l.code,l.description,l.unit,l.approvedUnitPrice]))].join("\n");
+      const form = new FormData();
+      form.append("rfq", rfqFile ?? new File([rfqCsv], "synthetic-rfq.csv", { type: "text/csv" }));
+      form.append("catalogue", catalogueFile ?? new File([catalogueCsv], "synthetic-catalogue.csv", { type: "text/csv" }));
+      form.append("matches", JSON.stringify(manualMatches)); form.append("meta", JSON.stringify(meta)); form.append("approved", "true");
+      const response = await fetch("/api/jobs", { method: "POST", body: form });
+      const job = await response.json();
+      if (!response.ok) { setMessage(job.error || "Unable to save your quotation."); return; }
+      setPendingJob(job.id);
+      // Show the frozen server quotation before opening the payment provider.
+      window.location.href = `/jobs/${job.id}`;
+    } catch { setMessage("Unable to save the quotation. Please retry."); }
+    finally { setCheckoutBusy(false); }
+  }
+
   async function handleRfqUpload(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (!file) return;
 
     setManualMatches({});
+    setPricesApproved(false);
     const lower = file.name.toLowerCase();
 
     try {
@@ -142,6 +163,7 @@ export default function QuoteWorkspace() {
           return;
         }
 
+        setRfqFile(file);
         setRfqLines(parsed.lines);
         setSourceName(file.name);
         setMessage(
@@ -150,9 +172,9 @@ export default function QuoteWorkspace() {
         return;
       }
 
-      const csv = await fileToCsv(file);
+      const csv = await fileToCsv(file, "rfq");
       if (!csv) {
-        setMessage("Unsupported RFQ file. Use PDF, CSV, XLSX, or XLS.");
+        setMessage("Unsupported RFQ file. Use PDF, CSV, values-only XLSX.");
         return;
       }
 
@@ -164,13 +186,14 @@ export default function QuoteWorkspace() {
         return;
       }
 
+      setRfqFile(file);
       setRfqLines(parsed);
       setSourceName(file.name);
       setMessage(
         `Loaded ${parsed.length} RFQ line${parsed.length === 1 ? "." : "s."}`
       );
-    } catch {
-      setMessage("Could not read that RFQ file. Please check its format.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not read that RFQ file. Please check its format.");
     }
   }
 
@@ -179,9 +202,9 @@ export default function QuoteWorkspace() {
     if (!file) return;
 
     try {
-      const csv = await fileToCsv(file);
+      const csv = await fileToCsv(file, "catalogue");
       if (!csv) {
-        setMessage("Unsupported catalogue file. Use CSV, XLSX, or XLS.");
+        setMessage("Unsupported catalogue file. Use CSV, values-only XLSX.");
         return;
       }
 
@@ -193,28 +216,33 @@ export default function QuoteWorkspace() {
         return;
       }
 
+      setCatalogueFile(file);
+      setPricesApproved(false);
       setCatalogue(parsed);
       setManualMatches({});
       setCatalogueName(file.name);
       setMessage(
         `Loaded ${parsed.length} catalogue item${parsed.length === 1 ? "." : "s."} Matching has been recalculated.`
       );
-    } catch {
-      setMessage("Could not read that catalogue file. Please check its spreadsheet format.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not read that catalogue file. Please check its spreadsheet format.");
     }
   }
 
   function updateMeta(field: keyof QuoteMeta, value: string) {
+    setPricesApproved(false);
     setMeta((current) => ({ ...current, [field]: value }));
   }
 
   function approveSuggested(lineId: string, matchedCode: string | null) {
     if (!matchedCode) return;
+    setPricesApproved(false);
     setManualMatches((current) => ({ ...current, [lineId]: matchedCode }));
     setMessage("Match approved by reviewer. The line is now eligible for quotation if an approved price exists.");
   }
 
   function chooseCatalogueItem(lineId: string, code: string) {
+    setPricesApproved(false);
     setManualMatches((current) => {
       const next = { ...current };
       if (!code) delete next[lineId];
@@ -224,6 +252,9 @@ export default function QuoteWorkspace() {
   }
 
   function resetDemo() {
+    setRfqFile(null);
+    setCatalogueFile(null);
+    setPricesApproved(false);
     setRfqLines(demoRfq);
     setCatalogue(demoCatalogue);
     setManualMatches({});
@@ -232,143 +263,13 @@ export default function QuoteWorkspace() {
     setMessage("Synthetic RFQ and demo catalogue restored.");
   }
 
-  async function downloadQuoteExcel() {
-    if (!readyLines.length) {
-      setMessage("No approved quotation lines are ready to export.");
-      return;
-    }
-
-    const XLSX = await import("xlsx");
-    const rows = readyLines.map((line, index) => ({
-      No: index + 1,
-      "Item Code": line.matchedCode ?? line.code,
-      Description: line.matchedDescription ?? line.description,
-      Quantity: line.quantity,
-      Unit: line.unit,
-      "Unit Price": line.approvedUnitPrice ?? "",
-      Total: line.lineTotal ?? ""
-    }));
-
-    const details = [
-      ["QUOTATION"],
-      ["Supplier", meta.supplierName],
-      ["Customer", meta.customerName],
-      ["Quote No.", meta.quoteNumber],
-      ["Currency", meta.currency],
-      ["Valid for", `${meta.validDays} days`],
-      ["Source RFQ", sourceName],
-      [],
-    ];
-
-    const sheet = XLSX.utils.aoa_to_sheet(details);
-    XLSX.utils.sheet_add_json(sheet, rows, { origin: "A9", skipHeader: false });
-    XLSX.utils.sheet_add_aoa(
-      sheet,
-      [
-        [],
-        ["Approved subtotal", quote.subtotal],
-        ["Notes", meta.notes || ""]
-      ],
-      { origin: -1 }
-    );
-
-    sheet["!cols"] = [
-      { wch: 8 },
-      { wch: 20 },
-      { wch: 42 },
-      { wch: 12 },
-      { wch: 10 },
-      { wch: 14 },
-      { wch: 14 }
-    ];
-
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, sheet, "Quotation");
-    XLSX.writeFile(workbook, `${meta.quoteNumber || "quotation"}.xlsx`);
-    setMessage("Quotation Excel generated from approved lines only.");
-  }
-
-  function printQuotation() {
-    if (!readyLines.length) {
-      setMessage("No approved quotation lines are ready to print.");
-      return;
-    }
-
-    const win = window.open("", "_blank", "noopener,noreferrer");
-    if (!win) {
-      setMessage("Pop-up was blocked. Allow pop-ups to print or save the quotation as PDF.");
-      return;
-    }
-
-    const rows = readyLines
-      .map(
-        (line, index) => `
-          <tr>
-            <td>${index + 1}</td>
-            <td>${escapeHtml(line.matchedCode ?? line.code)}</td>
-            <td>${escapeHtml(line.matchedDescription ?? line.description)}</td>
-            <td class="num">${line.quantity}</td>
-            <td>${escapeHtml(line.unit)}</td>
-            <td class="num">${meta.currency} ${(line.approvedUnitPrice ?? 0).toFixed(2)}</td>
-            <td class="num">${meta.currency} ${(line.lineTotal ?? 0).toFixed(2)}</td>
-          </tr>
-        `
-      )
-      .join("");
-
-    win.document.write(`
-      <!doctype html>
-      <html>
-      <head>
-        <title>${escapeHtml(meta.quoteNumber)} - Quotation</title>
-        <style>
-          body{font-family:Arial,sans-serif;margin:44px;color:#15171a}
-          .top{display:flex;justify-content:space-between;gap:24px;margin-bottom:36px}
-          h1{font-size:30px;margin:0 0 8px}.muted{color:#68707a}
-          .meta{line-height:1.7;text-align:right}
-          table{width:100%;border-collapse:collapse;margin-top:24px}
-          th,td{border-bottom:1px solid #ddd;padding:10px 8px;text-align:left;font-size:12px}
-          th{background:#f4f5f7;text-transform:uppercase;font-size:10px;letter-spacing:.06em}
-          .num{text-align:right}.total{margin-top:24px;text-align:right;font-size:18px;font-weight:700}
-          .notes{margin-top:32px;padding-top:18px;border-top:1px solid #ddd;white-space:pre-wrap}
-          .foot{margin-top:42px;font-size:10px;color:#7a818a}
-          @media print{body{margin:20mm}.no-print{display:none}}
-        </style>
-      </head>
-      <body>
-        <div class="top">
-          <div>
-            <h1>QUOTATION</h1>
-            <strong>${escapeHtml(meta.supplierName)}</strong>
-            <div class="muted">Prepared from ${escapeHtml(sourceName)}</div>
-          </div>
-          <div class="meta">
-            <div><strong>Quote:</strong> ${escapeHtml(meta.quoteNumber)}</div>
-            <div><strong>Customer:</strong> ${escapeHtml(meta.customerName)}</div>
-            <div><strong>Valid:</strong> ${escapeHtml(meta.validDays)} days</div>
-          </div>
-        </div>
-        <table>
-          <thead><tr><th>#</th><th>Code</th><th>Description</th><th>Qty</th><th>Unit</th><th>Unit price</th><th>Total</th></tr></thead>
-          <tbody>${rows}</tbody>
-        </table>
-        <div class="total">Approved subtotal: ${escapeHtml(meta.currency)} ${quote.subtotal.toFixed(2)}</div>
-        ${meta.notes ? `<div class="notes"><strong>Notes</strong><br/>${escapeHtml(meta.notes)}</div>` : ""}
-        <div class="foot">Generated by QuoteFlow. Only reviewer-approved lines with approved catalogue prices are included.</div>
-        <script>window.onload=()=>window.print();</script>
-      </body></html>
-    `);
-    win.document.close();
-    setMessage("Quotation opened for printing. Choose “Save as PDF” in the print dialog for a PDF copy.");
-  }
-
   return (
     <section id="workspace" className="workspace">
       <div className="workspace-head">
         <div>
           <div className="eyebrow">MVP-03 · end-to-end quotation workflow</div>
           <h2>RFQ to quotation</h2>
-          <p className="muted">RFQ: {sourceName}</p>
+          <p className="muted">RFQ: {sourceName} · Each file must be smaller than 1.5 MB</p>
           <p className="muted">Catalogue: {catalogueName} · {catalogue.length} items</p>
         </div>
 
@@ -378,7 +279,7 @@ export default function QuoteWorkspace() {
             Upload catalogue
             <input
               type="file"
-              accept=".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
+              accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
               onChange={handleCatalogueUpload}
             />
           </label>
@@ -386,14 +287,14 @@ export default function QuoteWorkspace() {
             Upload RFQ
             <input
               type="file"
-              accept=".pdf,.csv,.xlsx,.xls,application/pdf,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
+              accept=".pdf,.csv,.xlsx,application/pdf,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
               onChange={handleRfqUpload}
             />
           </label>
         </div>
       </div>
 
-      <div className="notice">{message}</div>
+      <div className="notice" role="status">{message}</div>
 
       <div className="input-status-grid">
         <div><span>RFQ source</span><strong>{rfqLines.length} lines</strong><small>{sourceName}</small></div>
@@ -433,6 +334,7 @@ export default function QuoteWorkspace() {
                 <td>{row.lineTotal === null ? "—" : `${meta.currency} ${row.lineTotal.toFixed(2)}`}</td>
                 <td>
                   <span className={"status " + row.reviewStatus}>{row.reviewStatus}</span>
+                  {row.reviewStatus === "blocked" && row.approvedUnitPrice !== null ? <small>Check price and catalogue unit</small> : null}
                   {row.reviewStatus !== "ready" ? (
                     <div className="review-controls">
                       {row.reviewStatus === "review" && row.matchedCode ? (
@@ -472,15 +374,19 @@ export default function QuoteWorkspace() {
 
       <div className="export-row">
         <div>
-          <strong>Generate quotation</strong>
-          <span>Only Ready lines are included. Review and Blocked lines remain excluded.</span>
+          <strong>Export one reviewed quotation</strong>
+          <span>The service fee is separate from your quotation subtotal. Only Ready lines are included.</span>
         </div>
         <div className="export-actions">
-          <button type="button" className="secondary-button" onClick={downloadQuoteExcel}>Download Excel</button>
-          <button type="button" onClick={printQuotation}>Print / Save PDF</button>
+          <label><input type="checkbox" checked={pricesApproved} onChange={e => setPricesApproved(e.target.checked)} /> I reviewed the source quantities, matches and catalogue prices. I accept that {quote.reviewCount + quote.blockedCount} unresolved lines are excluded.</label>
+          <button type="button" onClick={startCheckout} disabled={checkoutBusy || !readyLines.length || !pricesApproved || !fee}>
+            {checkoutBusy ? "Saving quotation..." : fee ? `Review saved quotation · ${fee} test payment` : "Test payments unavailable"}
+          </button>
+          {pendingJob ? <a href={`/jobs/${pendingJob}`}>Resume saved quotation</a> : null}
         </div>
       </div>
 
+      <p><a href="/policies">Support, refunds, privacy and terms</a> · Test payments only</p>
       <div className="guardrail">
         <strong>QuoteFlow safety rule</strong>
         <span>PDF extraction must be reviewed. Missing prices and uncertain matches never enter the quotation until a reviewer resolves them.</span>
