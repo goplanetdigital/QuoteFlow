@@ -1,3 +1,4 @@
+import { spreadsheetCsv } from "./spreadsheet";
 import {
   buildQuote,
   parseCatalogueCsv,
@@ -201,15 +202,9 @@ export async function parseUpload(file: File, kind: "rfq" | "catalogue") {
     return { bytes, rows: parsePdfText(result.text).lines };
   }
   if (ext === "csv") csv = bytes.toString("utf8");
-  else if (ext === "xlsx" || ext === "xls") {
-    const XLSX = await import("xlsx");
-    const wb = XLSX.read(bytes, {
-      type: "buffer",
-      sheetRows: kind === "rfq" ? 502 : 5002,
-    });
-    csv = XLSX.utils.sheet_to_csv(wb.Sheets[wb.SheetNames[0]]);
-  } else
-    throw new AppError(400, "Use CSV or Excel, or a selectable-text RFQ PDF.");
+  else if (ext === "xlsx") csv = await spreadsheetCsv(bytes, kind === "rfq" ? 501 : 5001);
+  else if (ext === "xls") throw new AppError(400, "Legacy XLS is unsupported. Save it as a values-only XLSX or CSV first.");
+  else throw new AppError(400, "Use CSV or values-only XLSX, or a selectable-text RFQ PDF.");
   return {
     bytes,
     rows: kind === "rfq" ? parseCsv(csv) : parseCatalogueCsv(csv),

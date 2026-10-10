@@ -14,7 +14,7 @@ import {
   parseCsv,
 } from "../lib/quoteflow";
 import { paymentConfig } from "../lib/server/config";
-import * as XLSX from "xlsx";
+import { readSheet } from "read-excel-file/node";
 const meta = {
   supplierName: "Demo supplier",
   customerName: "Customer A",
@@ -295,19 +295,16 @@ test("failed and expired events preserve isolation across concurrent jobs", asyn
   await processPayment(event(session(b), "checkout.session.expired"), db);
   assert.equal(b.state, "expired");
 });
-test("Excel and printable delivery preserve approved values, audit exclusions and neutralize untrusted content", () => {
+test("Excel and printable delivery preserve approved values, audit exclusions and neutralize untrusted content", async () => {
   const j = makeJob();
   j.snapshot.meta.supplierName = '=HYPERLINK("https://invalid")';
   j.snapshot.meta.notes = "<script>alert(1)</script>";
-  const out = generateDelivery(j.snapshot);
-  const wb = XLSX.read(out.excel, { type: "buffer" });
-  const values = XLSX.utils.sheet_to_json(wb.Sheets.Quotation, {
-    header: 1,
-  }) as unknown[][];
+  const out = await generateDelivery(j.snapshot);
+  const values = await readSheet(out.excel, "Quotation");
   assert.equal(values[1][1], '\'=HYPERLINK("https://invalid")');
   assert.equal(values[8][4], 0.82);
   assert.equal(values[9][1], 98.4);
-  assert.ok(wb.Sheets["Review audit"]);
+  assert.equal((await readSheet(out.excel, "Review audit")).length, j.snapshot.lines.length + 1);
   assert.ok(out.printable.toString().includes("&lt;script&gt;"));
   assert.ok(!out.printable.toString().includes("<script>"));
 });

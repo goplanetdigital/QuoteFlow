@@ -13,13 +13,17 @@
     "db:cleanup": "node --import tsx scripts/cleanup.ts"
   },
   "dependencies": {
+    "fflate": "0.8.3",
     "next": "15.5.27",
     "pdf-parse": "^1.1.1",
     "pg": "^8.23.1",
     "react": "19.1.1",
     "react-dom": "19.1.1",
+    "read-excel-file": "9.3.12",
+    "sax": "1.6.0",
     "stripe": "^18.5.0",
-    "xlsx": "^0.18.5"
+    "write-excel-file": "4.1.1",
+    "yauzl": "3.4.0"
   },
   "devDependencies": {
     "@playwright/test": "^1.64.0",
@@ -28,6 +32,8 @@
     "@types/pg": "^8.23.1",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@types/sax": "1.2.7",
+    "@types/yauzl": "3.4.0",
     "embedded-postgres": "^18.4.0-beta.17",
     "nock": "^14.0.17",
     "tsx": "^4.23.15",

@@ -21,21 +21,14 @@ type QuoteMeta = {
   notes: string;
 };
 
-async function fileToCsv(file: File) {
-  const name = file.name.toLowerCase();
-
-  if (name.endsWith(".csv")) return file.text();
-
-  if (name.endsWith(".xlsx") || name.endsWith(".xls")) {
-    const XLSX = await import("xlsx");
-    const buffer = await file.arrayBuffer();
-    const workbook = XLSX.read(buffer, { type: "array" });
-    const firstSheetName = workbook.SheetNames[0];
-    if (!firstSheetName) return "";
-    return XLSX.utils.sheet_to_csv(workbook.Sheets[firstSheetName]);
-  }
-
-  return "";
+async function fileToCsv(file: File, kind: "rfq" | "catalogue") {
+  const form = new FormData();
+  form.append("file", file);
+  form.append("kind", kind);
+  const response = await fetch("/api/extract-spreadsheet", { method: "POST", body: form });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error || "Could not read this spreadsheet.");
+  return String(data.csv);
 }
 
 function defaultQuoteNumber() {
@@ -179,9 +172,9 @@ export default function QuoteWorkspace() {
         return;
       }
 
-      const csv = await fileToCsv(file);
+      const csv = await fileToCsv(file, "rfq");
       if (!csv) {
-        setMessage("Unsupported RFQ file. Use PDF, CSV, XLSX, or XLS.");
+        setMessage("Unsupported RFQ file. Use PDF, CSV, values-only XLSX.");
         return;
       }
 
@@ -199,8 +192,8 @@ export default function QuoteWorkspace() {
       setMessage(
         `Loaded ${parsed.length} RFQ line${parsed.length === 1 ? "." : "s."}`
       );
-    } catch {
-      setMessage("Could not read that RFQ file. Please check its format.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not read that RFQ file. Please check its format.");
     }
   }
 
@@ -209,9 +202,9 @@ export default function QuoteWorkspace() {
     if (!file) return;
 
     try {
-      const csv = await fileToCsv(file);
+      const csv = await fileToCsv(file, "catalogue");
       if (!csv) {
-        setMessage("Unsupported catalogue file. Use CSV, XLSX, or XLS.");
+        setMessage("Unsupported catalogue file. Use CSV, values-only XLSX.");
         return;
       }
 
@@ -231,8 +224,8 @@ export default function QuoteWorkspace() {
       setMessage(
         `Loaded ${parsed.length} catalogue item${parsed.length === 1 ? "." : "s."} Matching has been recalculated.`
       );
-    } catch {
-      setMessage("Could not read that catalogue file. Please check its spreadsheet format.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not read that catalogue file. Please check its spreadsheet format.");
     }
   }
 
@@ -286,7 +279,7 @@ export default function QuoteWorkspace() {
             Upload catalogue
             <input
               type="file"
-              accept=".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
+              accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
               onChange={handleCatalogueUpload}
             />
           </label>
@@ -294,7 +287,7 @@ export default function QuoteWorkspace() {
             Upload RFQ
             <input
               type="file"
-              accept=".pdf,.csv,.xlsx,.xls,application/pdf,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
+              accept=".pdf,.csv,.xlsx,application/pdf,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
               onChange={handleRfqUpload}
             />
           </label>

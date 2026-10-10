@@ -2,7 +2,8 @@ import { test, expect } from "@playwright/test";
 import Stripe from "stripe";
 import { Pool } from "pg";
 import { mkdir } from "node:fs/promises";
-import * as XLSX from "xlsx";
+import writeXlsxFile from "write-excel-file/node";
+import { readSheet } from "read-excel-file/node";
 const origin = "http://localhost:3100";
 const rfq =
   "code,description,quantity,unit\nCBL-2C-1.5,2 Core Cable 1.5mm,120,m\nSW20,20 amp double pole wall switch,12,pcs\nDB-12W,Distribution board 12 way,3,pcs";
@@ -16,6 +17,31 @@ const meta = {
   validDays: "30",
   notes: "",
 };
+test("malicious spreadsheet preview and paid-job submission reject cached formula prices without saving jobs", async ({ request, page }) => {
+  const malicious = await writeXlsxFile([
+    ["code", "description", "unit", "price"],
+    ["CBL-2C-1.5", "Cable", "m", { type: "Formula", value: "1+1" }],
+  ]).toBuffer();
+  const db = new Pool({ connectionString: process.env.QF_TEST_DATABASE_URL });
+  try {
+    const before = Number((await db.query("SELECT count(*) FROM qf_jobs")).rows[0].count);
+    const file = { name: "malicious.xlsx", mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", buffer: malicious };
+    const preview = await request.post("/api/extract-spreadsheet", { headers: { Origin: origin }, multipart: { kind: "catalogue", file } });
+    expect(preview.status()).toBe(422);
+    expect((await preview.json()).error).toContain("values-only");
+    const job = await request.post("/api/jobs", { headers: { Origin: origin }, multipart: {
+      rfq: { name: "rfq.csv", mimeType: "text/csv", buffer: Buffer.from(rfq) },
+      catalogue: file, matches: "{}", meta: JSON.stringify(meta), approved: "true",
+    } });
+    expect(job.status()).toBe(422);
+    expect(Number((await db.query("SELECT count(*) FROM qf_jobs")).rows[0].count)).toBe(before);
+    await page.goto("/");
+    await page.locator("input[type=file]").nth(0).setInputFiles(file);
+    await expect(page.getByText(/Invalid or unsafe spreadsheet/)).toBeVisible();
+    expect((await request.post("/api/extract-spreadsheet", { headers: { Origin: "https://attacker.invalid" }, multipart: { kind: "catalogue", file } })).status()).toBe(403);
+    expect((await request.post("/api/extract-spreadsheet", { headers: { Origin: origin }, multipart: { kind: "catalogue", file: { ...file, name: "broken.xlsx", buffer: Buffer.from("broken zip") } } })).status()).toBe(422);
+  } finally { await db.end(); }
+});
 async function makeJob(
   api: import("@playwright/test").APIRequestContext,
   quantity = 120,
@@ -101,18 +127,20 @@ test("browser upload → approve → frozen job → Checkout → signed payment 
     .locator("input[type=file]")
     .nth(0)
     .setInputFiles({
-      name: "catalogue.csv",
-      mimeType: "text/csv",
-      buffer: Buffer.from(catalogue),
+      name: "catalogue.xlsx",
+      mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      buffer: await writeXlsxFile(catalogue.split("\n").map(row => row.split(","))).toBuffer(),
     });
+  await expect(page.getByText(/Loaded 3 catalogue items/)).toBeVisible();
   await page
     .locator("input[type=file]")
     .nth(1)
     .setInputFiles({
-      name: "rfq.csv",
-      mimeType: "text/csv",
-      buffer: Buffer.from(rfq),
+      name: "rfq.xlsx",
+      mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      buffer: await writeXlsxFile(rfq.split("\n").map(row => row.split(","))).toBuffer(),
     });
+  await expect(page.getByText(/Loaded 3 RFQ lines/)).toBeVisible();
   await expect(
     page.getByRole("button", { name: "Approve suggested" }),
   ).toBeVisible();
@@ -133,14 +161,12 @@ test("browser upload → approve → frozen job → Checkout → signed payment 
   ).toBeVisible();
   const r = await context.request.get(`/api/jobs/${id}/result?format=xlsx`);
   expect(r.status()).toBe(200);
-  const wb = XLSX.read(await r.body(), { type: "buffer" });
-  const rows = XLSX.utils.sheet_to_json(wb.Sheets.Quotation, {
-    header: 1,
-  }) as unknown[][];
+  const excel = await r.body();
+  const rows = await readSheet(excel, "Quotation");
   expect(
     rows.some((row) => row[0] === "Approved subtotal" && row[1] === 247.2),
   ).toBeTruthy();
-  expect(wb.Sheets["Review audit"]).toBeTruthy();
+  expect((await readSheet(excel, "Review audit")).length).toBe(4);
   const html = await context.request.get(`/api/jobs/${id}/result?format=html`);
   expect(html.status()).toBe(200);
   expect(await html.text()).toContain("247.20");

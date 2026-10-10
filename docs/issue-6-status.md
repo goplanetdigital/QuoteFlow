@@ -47,19 +47,19 @@ Delivery is automatic on the private job page after verified payment. It does no
 
 | Check | Result | Evidence / limitations |
 | --- | --- | --- |
-| Deterministic automated tests | PASS | 13 passed, 0 failed, 0 skipped |
-| Browser/API/database integration | PASS | 5 passed using Linux Chromium, real ephemeral PostgreSQL, production Next.js and a local Stripe HTTP simulator |
+| Deterministic automated tests | PASS | 24 passed, 0 failed, 0 skipped |
+| Browser/API/database integration | PASS | 6 passed using Linux Chromium, real ephemeral PostgreSQL, production Next.js and a local Stripe HTTP simulator |
 | TypeScript | PASS | `npm run typecheck` completed successfully |
 | Production build | PASS | `npm run build` compiled, checked types, generated pages and completed build tracing |
 | Diff whitespace checks | PASS | `git diff --check` completed successfully |
-| Production dependency audit | BLOCKED | One high-severity affected dependency, inherited `xlsx@0.18.5`, with prototype-pollution and ReDoS advisories; no npm fix available |
+| Full dependency audit | PASS | `npm audit`: zero vulnerabilities; vulnerable SheetJS dependency removed from runtime, tests and lockfile |
 | Real Stripe-hosted test-card acceptance | NOT RUN | Real QuoteFlow test credentials and a configured test endpoint were not available |
 | Hosted deployment / database acceptance | NOT RUN | No deployment, infrastructure provisioning or environment settings were changed |
 | Live account eligibility / charging | NOT VERIFIED / DISABLED | No live account settings were inspected or changed; live credentials are refused by the code |
 
-The five integration scenarios verified:
+The six integration scenarios verified:
 
-1. Browser CSV uploads → explicit match approval → frozen server quotation → actual Stripe SDK request to a simulator → signed webhook → Excel with the expected subtotal and printable output. Browser page errors were also checked.
+1. Browser XLSX uploads → explicit match approval → frozen server quotation → actual Stripe SDK request to a simulator → signed webhook → Excel with the expected subtotal and printable output. Browser page errors were also checked.
 2. A forged success URL cannot unlock downloads; cancellation retains the saved job.
 3. Concurrent customers/uploads and repeated Checkout requests stay isolated; client fee/currency tampering is ignored.
 4. Wrong/stale signatures, mismatched fees, pending completion, failed/async-success events and duplicates behave correctly. Stored files/event deduplication were inspected in PostgreSQL. Restarting the application retained the same authorized result bytes.
@@ -69,11 +69,15 @@ The deterministic suite additionally covers failed-generation rollback/retry, ou
 
 ## Missing requirements before release
 
-1. Resolve the inherited `xlsx` security advisories before accepting public untrusted spreadsheets. The small-file limit is not a fix. Maintained upstream distribution or a replacement needs review while retaining XLS/XLSX compatibility.
+1. The inherited `xlsx` advisories are resolved by replacement. Before a public pilot, configure host-level rate/concurrency limits; bounded individual files do not prevent request-flood resource exhaustion. See [spreadsheet security review](spreadsheet-security.md).
 2. Securely supply a dedicated preview PostgreSQL connection, QuoteFlow test API/webhook secrets and trusted site origin; run the migration. No real secret has been added to GitHub or the repository.
 3. Complete a real Stripe-hosted test-card run and verify the webhook endpoint/retries in the intended preview. Simulator success is not real Stripe acceptance.
 4. Confirm the public support contact, review policy/refund wording, configure monitored data cleanup/backups and host-level abuse controls. Cookie access is browser-specific; cross-device recovery is not implemented.
-5. Verify representative PDF/XLS/XLSX customer files in preview, including PDF extraction review. OCR remains unsupported. Each file is limited to 1.5 MiB; bigger uploads need a later direct-upload architecture.
+5. Verify representative PDF/values-only XLSX customer files in preview, including PDF extraction review. OCR remains unsupported. Each file is limited to 1.5 MiB; bigger uploads need a later direct-upload architecture.
 6. Verify account eligibility separately before considering live charging. Live mode needs a separately reviewed code change and explicit authorization.
 
 No TimeEase, Shopify, Payhip, n8n or Stripe live settings were changed. Publication authorization covers only the new QuoteFlow feature branch and PR against main. Do not merge, enable auto-merge or deploy to production.
+
+## PR #7 spreadsheet security follow-up
+
+The sole vulnerable path was the direct `xlsx@0.18.5` dependency (prototype pollution GHSA-4r6h-8v6p-xvw6; ReDoS GHSA-5pgg-2g8v-p4x9). Browser/server parsing and quotation/test generation now use maintained alternatives; no SheetJS code remains in the lockfile. The sixth integration scenario rejects malicious formulas through browser preview and direct job submission, confirms no job is saved, and checks malformed and cross-origin uploads. Compatibility restrictions and residual risks are documented in [spreadsheet-security.md](spreadsheet-security.md).

@@ -124,7 +124,7 @@ export async function processPayment(
         session.payment_status === "paid"
       ) {
         job.state = "processing";
-        const files = deliver(job.snapshot);
+        const files = await deliver(job.snapshot);
         job.excel = files.excel;
         job.printable = files.printable;
         job.state = "ready";

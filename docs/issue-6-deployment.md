@@ -42,7 +42,7 @@ The route validates the raw body signature with Stripe's timestamp tolerance. It
 
 Checkout creation uses a job-specific Stripe idempotency key and a PostgreSQL row lock. Repeated requests return the same saved session. Unsaved first/retry attempts are limited to the first 20 hours of a job, staying inside Stripe’s minimum 24-hour idempotency retention window. Expired sessions require a new job. Fulfillment generates both artifacts and writes the event record in one database transaction. A generation/database error returns a non-2xx response and rolls back, allowing Stripe to retry. Duplicate events and late failure/expiry events cannot regenerate or revoke a ready quotation. Operators can resend an event in **test** mode after fixing a failure. Keep event IDs for reconciliation.
 
-Generation is deliberately synchronous and bounded: up to 500 RFQ lines, 5,000 catalogue items, and 1.5 MiB per upload; total multipart requests stay below the hosted function request limit. Larger files require a later direct-upload/storage workflow. Original uploads and results live in private database bytea columns; no public bucket or URL is created. Use a database provider with encryption at rest, managed backups and appropriate access controls.
+Fulfillment runs within the webhook transaction and awaits the XLSX writer. Uploads are bounded: up to 500 RFQ lines, 5,000 catalogue items, and 1.5 MiB per upload; total multipart requests stay below the hosted function request limit. Larger files require a later direct-upload/storage workflow. Original uploads and results live in private database bytea columns; no public bucket or URL is created. Use a database provider with encryption at rest, managed backups and appropriate access controls.
 
 ## Access and retention
 
@@ -74,9 +74,13 @@ Tests cover source pricing, uncertain matches, unsafe quantities/prices/units, u
 ## Remaining release gates
 
 1. Provide dedicated preview database and test secrets securely, run migration, and set the trusted preview origin. No external infrastructure was provisioned by this patch.
-2. Fix or replace the inherited `xlsx@0.18.5` dependency. npm reports prototype-pollution and ReDoS advisories with no npm fix; file size limits do not eliminate them. Preserve XLS/XLSX compatibility when evaluating the maintained upstream distribution.
+2. The inherited `xlsx@0.18.5` dependency has been removed. See [spreadsheet security and compatibility](spreadsheet-security.md); verify values-only XLSX/CSV from representative customer workflows. Legacy XLS requires conversion.
 3. Confirm support identity, retention scheduling/backups, abuse controls and approve policy wording.
-4. Run a real QuoteFlow Stripe test-card checkout in a reviewed preview. Confirm success, cancellation, card decline, pending/failed async payments, signed webhook retry and duplication, restart durability and a second browser's isolation. Verify PDF/XLS/XLSX/CSV parsing on representative customer files, including selectable-text PDFs. OCR is not supported.
+4. Run a real QuoteFlow Stripe test-card checkout in a reviewed preview. Confirm success, cancellation, card decline, pending/failed async payments, signed webhook retry and duplication, restart durability and a second browser's isolation. Verify PDF/values-only XLSX/CSV parsing on representative customer files, including selectable-text PDFs. OCR is not supported.
 5. Check QuoteFlow account eligibility/activation manually. Live credentials are rejected by this implementation. Live launch needs a separately reviewed change and explicit authorization after fulfillment verification.
 
 Do not modify TimeEase, Shopify, Payhip, n8n or Stripe live settings. Do not push, open a PR or publish without the user's approval.
+
+## Spreadsheet security update for PR #7
+
+All uploads now use the same bounded server spreadsheet validation for preview and job creation. Excel delivery awaits the maintained writer inside the existing atomic payment transaction. See [security checks, tests, compatibility and remaining risks](spreadsheet-security.md).

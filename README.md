@@ -28,3 +28,5 @@ Vercel is connected to this repository. Feature branches are validated with Verc
 The local Issue #6 implementation ties one immutable reviewed quotation to one test Checkout session. Only a signed, paid webhook can generate private Excel and printable results. Customer jobs and uploads persist in PostgreSQL and are authorized by job-specific browser cookies.
 
 See [setup, tests and release gates](docs/issue-6-deployment.md). Live Stripe keys are rejected. Publication and real Stripe test acceptance remain subject to owner approval.
+
+Spreadsheet imports support CSV and values-only XLSX. Convert legacy XLS to XLSX or CSV; formulas, macros, external links and embedded binary content are rejected. See [spreadsheet security and compatibility](docs/spreadsheet-security.md).
