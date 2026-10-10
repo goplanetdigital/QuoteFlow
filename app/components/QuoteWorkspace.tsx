@@ -294,14 +294,13 @@ export default function QuoteWorkspace() {
       return;
     }
 
-    const win = window.open("", "_blank", "noopener,noreferrer");
+    const win = window.open("", "_blank");
     if (!win) {
       setMessage("Pop-up was blocked. Allow pop-ups to print or save the quotation as PDF.");
       return;
     }
 
-    const rows = readyLines
-      .map(
+    // Detach the printable window from the application before writing user content.\n    win.opener = null;\n\n    const rows = readyLines\n      .map(
         (line, index) => `
           <tr>
             <td>${index + 1}</td>
