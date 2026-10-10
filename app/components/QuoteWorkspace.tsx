@@ -109,6 +109,16 @@ export default function QuoteWorkspace() {
     };
   }, [rfqLines, catalogue, manualMatches]);
 
+  const pricing = useMemo(() => {
+    const count = rfqLines.length;
+    if (count === 0) return { label: "No RFQ items", amount: null as number | null };
+    if (count <= 20) return { label: "Basic", amount: 10 };
+    if (count <= 100) return { label: "Standard", amount: 29 };
+    if (count <= 300) return { label: "Business", amount: 59 };
+    if (count <= 1000) return { label: "Bulk", amount: 99 };
+    return { label: "Enterprise - custom quote", amount: null as number | null };
+  }, [rfqLines.length]);
+
   const readyLines = useMemo(
     () => quote.lines.filter((line) => line.reviewStatus === "ready"),
     [quote.lines]
@@ -555,6 +565,11 @@ export default function QuoteWorkspace() {
         Quotation notes
         <textarea value={meta.notes} onChange={(e) => updateMeta("notes", e.target.value)} placeholder="Payment terms, delivery notes, exclusions, or other quotation notes." />
       </label>
+
+      <div className="guardrail">
+        <strong>QuoteFlow export pricing (USD)</strong>
+        <span>{rfqLines.length} RFQ item(s) · {pricing.label} · {pricing.amount === null ? "Contact us for pricing" : `USD ${pricing.amount.toFixed(2)} per quotation`}. One payment will cover PDF and Excel of the same quotation. Payment checkout is not enabled yet; downloads remain available during testing.</span>
+      </div>
 
       <div className="export-row">
         <div>
