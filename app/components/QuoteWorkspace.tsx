@@ -1,6 +1,6 @@
 "use client";
 
-import { ChangeEvent, useMemo, useState } from "react";
+import { ChangeEvent, useEffect, useMemo, useState } from "react";
 import {
   buildQuote,
   CatalogueItem,
@@ -56,6 +56,9 @@ function defaultQuoteNumber() {
 }
 
 export default function QuoteWorkspace() {
+  const [paymentStatus, setPaymentStatus] = useState<"unpaid" | "checking" | "paid">("unpaid");
+  const [checkoutBusy, setCheckoutBusy] = useState(false);
+  const [paymentError, setPaymentError] = useState("");
   const [rfqLines, setRfqLines] = useState<RfqLine[]>(demoRfq);
   const [catalogue, setCatalogue] = useState<CatalogueItem[]>(demoCatalogue);
   const [sourceName, setSourceName] = useState("Synthetic RFQ demo.csv");
@@ -123,6 +126,62 @@ export default function QuoteWorkspace() {
     () => quote.lines.filter((line) => line.reviewStatus === "ready"),
     [quote.lines]
   );
+
+  const quotationPayload = JSON.stringify({ rfqLines, catalogue, manualMatches, meta, sourceName });
+  async function quotationFingerprint() {
+    const data = new TextEncoder().encode(quotationPayload);
+    const hash = await crypto.subtle.digest("SHA-256", data);
+    return Array.from(new Uint8Array(hash)).map((byte) => byte.toString(16).padStart(2, "0")).join("");
+  }
+
+  useEffect(() => {
+    setPaymentStatus("unpaid");
+    const sessionId = new URLSearchParams(window.location.search).get("session_id");
+    if (!sessionId) return;
+    const saved = sessionStorage.getItem("quoteflow_pending");
+    if (!saved) return;
+    try {
+      const pending = JSON.parse(saved);
+      if (pending.sessionId && pending.sessionId !== sessionId) return;
+      const payload = pending.payload as string;
+      if (!payload) return;
+      const snapshot = JSON.parse(payload);
+      setRfqLines(snapshot.rfqLines);
+      setCatalogue(snapshot.catalogue);
+      setManualMatches(snapshot.manualMatches);
+      setMeta(snapshot.meta);
+      setSourceName(snapshot.sourceName);
+      setPaymentStatus("checking");
+      const bytes = new TextEncoder().encode(payload);
+      crypto.subtle.digest("SHA-256", bytes).then((hash) => {
+        const fingerprint = Array.from(new Uint8Array(hash)).map((byte) => byte.toString(16).padStart(2, "0")).join("");
+        return fetch("/api/verify-payment", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sessionId, fingerprint }) });
+      }).then((response) => response.json()).then((result) => {
+        setPaymentStatus(result.paid ? "paid" : "unpaid");
+        if (!result.paid) setPaymentError("Payment not verified.");
+      }).catch(() => { setPaymentStatus("unpaid"); setPaymentError("Could not verify payment."); });
+    } catch { setPaymentStatus("unpaid"); }
+  }, []);
+
+  async function startCheckout() {
+    if (!readyLines.length || !/^[A-Z]{3}$/.test(meta.currency)) {
+      setPaymentError("Approve quotation lines and select a valid catalogue currency first.");
+      return;
+    }
+    setCheckoutBusy(true);
+    setPaymentError("");
+    try {
+      const fingerprint = await quotationFingerprint();
+      const response = await fetch("/api/checkout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ itemCount: rfqLines.length, fingerprint }) });
+      const result = await response.json();
+      if (!response.ok || !result.url) throw new Error(result.error || "Checkout unavailable.");
+      sessionStorage.setItem("quoteflow_pending", JSON.stringify({ payload: quotationPayload }));
+      window.location.assign(result.url);
+    } catch (error) {
+      setPaymentError(error instanceof Error ? error.message : "Checkout unavailable.");
+      setCheckoutBusy(false);
+    }
+  }
 
   async function handleRfqUpload(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
@@ -246,6 +305,7 @@ export default function QuoteWorkspace() {
   }
 
   async function downloadQuoteExcel() {
+    if (paymentStatus !== "paid") { setPaymentError("Complete payment before downloading."); return; }
     if (!readyLines.length) {
       setMessage("No approved quotation lines are ready to export.");
       return;
@@ -302,6 +362,7 @@ export default function QuoteWorkspace() {
   }
 
   function downloadPdf() {
+    if (paymentStatus !== "paid") { setPaymentError("Complete payment before downloading."); return; }
     if (!/^[A-Z]{3}$/.test(meta.currency)) {
       setMessage("Select the catalogue currency before downloading PDF.");
       return;
@@ -568,17 +629,25 @@ export default function QuoteWorkspace() {
 
       <div className="guardrail">
         <strong>QuoteFlow export pricing (USD)</strong>
-        <span>{rfqLines.length} RFQ item(s) · {pricing.label} · {pricing.amount === null ? "Contact us for pricing" : `USD ${pricing.amount.toFixed(2)} per quotation`}. One payment will cover PDF and Excel of the same quotation. Payment checkout is not enabled yet; downloads remain available during testing.</span>
+        <span>{rfqLines.length} RFQ item(s) · {pricing.label} · {pricing.amount === null ? "Contact us for pricing" : `USD ${pricing.amount.toFixed(2)} per quotation`}. One payment will cover PDF and Excel of the same quotation. Stripe payment is required to unlock exports.</span>
       </div>
 
+      <div className="export-row">
+        <div>
+          <strong>Stripe checkout · {process.env.NEXT_PUBLIC_QUOTE_TEST_MODE === "true" ? "USD 1.00 TEST" : "USD " + (pricing.amount?.toFixed(2) ?? "custom")}</strong>
+          <span>{paymentStatus === "paid" ? "Payment verified. PDF and Excel unlocked." : paymentStatus === "checking" ? "Verifying payment..." : "Pay to unlock both downloads."}</span>
+          {paymentError ? <span role="alert">{paymentError}</span> : null}
+        </div>
+        <button type="button" onClick={startCheckout} disabled={checkoutBusy || paymentStatus !== "unpaid" || pricing.amount === null}>{checkoutBusy ? "Opening Stripe..." : "Pay with Stripe"}</button>
+      </div>
       <div className="export-row">
         <div>
           <strong>Generate quotation</strong>
           <span>Only Ready lines are included. Review and Blocked lines remain excluded.</span>
         </div>
         <div className="export-actions">
-          <button type="button" className="secondary-button" onClick={downloadQuoteExcel}>Download Excel</button>
-          <button type="button" onClick={downloadPdf}>Download PDF</button>
+          <button type="button" className="secondary-button" onClick={downloadQuoteExcel} disabled={paymentStatus !== "paid"}>Download Excel</button>
+          <button type="button" onClick={downloadPdf} disabled={paymentStatus !== "paid"}>Download PDF</button>
         </div>
       </div>
 
