@@ -333,30 +333,84 @@ export default function QuoteWorkspace() {
       if (current) result.push(current);
       return result.length ? result : [""];
     };
-    add("QUOTATION", 45, 20);
-    y -= 8;
-    add("Supplier: " + meta.supplierName);
-    add("Customer: " + meta.customerName);
-    add("Quote: " + meta.quoteNumber);
-    add("Valid: " + meta.validDays + " days");
-    add("Source: " + sourceName);
-    y -= 14;
-    add("APPROVED ITEMS", 45, 13);
+    // Draw a clean, printable A4 quotation with aligned columns and repeated page headings.
+    const drawText = (value: unknown, x: number, atY: number, size = 10) => {
+      pages[pages.length - 1].push(`BT /F1 ${size} Tf 1 0 0 1 ${x} ${atY} Tm (${pdfEscape(value)}) Tj ET`);
+    };
+    const rule = (atY: number) => {
+      pages[pages.length - 1].push(`0.82 0.85 0.89 RG 0.6 w 45 ${atY} m 550 ${atY} l S`);
+    };
+    const rightText = (value: unknown, rightX: number, atY: number, size = 9) => {
+      // Helvetica's average glyph width is approximated to keep numbers aligned.
+      const width = ascii(value).split("").reduce((sum, char) => sum + (char === " " ? 0.28 : /[il1.,]/.test(char) ? 0.28 : /[MW@]/.test(char) ? 0.85 : 0.55), 0) * size;
+      drawText(value, rightX - width, atY, size);
+    };
+    const heading = (continuation = false) => {
+      drawText("QUOTATION", 45, 790, 22);
+      rightText(meta.quoteNumber, 550, 796, 10);
+      rule(774);
+      drawText("FROM", 45, 750, 9);
+      drawText(meta.supplierName, 45, 732, 12);
+      drawText("BILL TO", 310, 750, 9);
+      drawText(meta.customerName, 310, 732, 12);
+      drawText("VALIDITY", 45, 704, 9);
+      drawText(meta.validDays + " days", 45, 688, 10);
+      drawText("CURRENCY", 310, 704, 9);
+      drawText(meta.currency, 310, 688, 10);
+      drawText("SOURCE", 45, 662, 9);
+      drawText(sourceName, 45, 646, 9);
+      if (continuation) rightText("CONTINUED", 550, 646, 9);
+      rule(626);
+      drawText("#", 48, 607, 9);
+      drawText("ITEM / DESCRIPTION", 78, 607, 9);
+      rightText("QTY", 368, 607, 9);
+      rightText("UNIT", 447, 607, 9);
+      rightText("TOTAL", 548, 607, 9);
+      rule(595);
+      y = 576;
+    };
+    heading();
     readyLines.forEach((line, index) => {
       const description = line.matchedDescription ?? line.description;
-      wrap(`${index + 1}. ${line.matchedCode ?? line.code} - ${description}`, 78).forEach((part) => add(part));
-      add(`Qty: ${line.quantity} ${line.unit}  |  Unit: ${meta.currency} ${(line.approvedUnitPrice ?? 0).toFixed(2)}  |  Total: ${meta.currency} ${(line.lineTotal ?? 0).toFixed(2)}`, 60);
+      const item = `${line.matchedCode ?? line.code} - ${description}`;
+      const wrapped = wrap(item, 40);
+      const rowHeight = Math.max(42, wrapped.length * 14 + 12);
+      if (y - rowHeight < 105) {
+        pages.push([]);
+        heading(true);
+      }
+      drawText(index + 1, 48, y, 9);
+      wrapped.forEach((part, partIndex) => drawText(part, 78, y - partIndex * 14, 9));
+      rightText(`${line.quantity} ${line.unit}`, 368, y, 9);
+      rightText((line.approvedUnitPrice ?? 0).toFixed(2), 447, y, 9);
+      rightText((line.lineTotal ?? 0).toFixed(2), 548, y, 9);
+      y -= rowHeight;
+      rule(y + 8);
       y -= 7;
     });
-    y -= 8;
-    add(`APPROVED SUBTOTAL: ${meta.currency} ${quote.subtotal.toFixed(2)}`, 45, 13);
-    if (meta.notes) {
-      y -= 10;
-      add("NOTES", 45, 12);
-      wrap(meta.notes).forEach((part) => add(part));
+    if (y < 135) {
+      pages.push([]);
+      heading(true);
     }
-    y -= 14;
-    wrap("Only reviewer-approved lines with approved catalogue prices are included.").forEach((part) => add(part, 45, 9));
+    y -= 15;
+    drawText("APPROVED SUBTOTAL", 305, y, 10);
+    rightText(`${meta.currency} ${quote.subtotal.toFixed(2)}`, 548, y, 13);
+    y -= 32;
+    if (meta.notes) {
+      const noteLines = wrap(meta.notes, 88);
+      if (y - noteLines.length * 14 < 75) {
+        pages.push([]);
+        heading(true);
+      }
+      drawText("TERMS & NOTES", 45, y, 10);
+      y -= 20;
+      noteLines.forEach((part) => { drawText(part, 45, y, 9); y -= 14; });
+    }
+    pages.forEach((commands, index) => {
+      commands.push(`0.82 0.85 0.89 RG 0.6 w 45 49 m 550 49 l S`);
+      commands.push(`BT /F1 8 Tf 1 0 0 1 45 34 Tm (QuoteFlow - approved catalogue prices only) Tj ET`);
+      commands.push(`BT /F1 8 Tf 1 0 0 1 490 34 Tm (Page ${index + 1} of ${pages.length}) Tj ET`);
+    });
 
     const objects: string[] = [];
     const put = (value: string) => { objects.push(value); return objects.length; };
