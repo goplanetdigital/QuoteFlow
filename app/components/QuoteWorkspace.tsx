@@ -61,6 +61,8 @@ export default function QuoteWorkspace() {
   const [testPriceMode, setTestPriceMode] = useState(false);
   const [authorizedPayload, setAuthorizedPayload] = useState<string | null>(null);
   const [paymentError, setPaymentError] = useState("");
+  const [recoverySessionId, setRecoverySessionId] = useState("");
+  const [recoveryBusy, setRecoveryBusy] = useState(false);
   const [rfqLines, setRfqLines] = useState<RfqLine[]>(demoRfq);
   const [catalogue, setCatalogue] = useState<CatalogueItem[]>(demoCatalogue);
   const [sourceName, setSourceName] = useState("Synthetic RFQ demo.csv");
@@ -204,6 +206,52 @@ export default function QuoteWorkspace() {
       setPaymentStatus("unpaid");
     }
   }, []);
+
+  async function recoverExistingPayment() {
+    const sessionId = recoverySessionId.trim();
+    if (!/^cs_test_[a-zA-Z0-9]+$/.test(sessionId)) {
+      setPaymentError("Paste the complete Stripe Checkout Session ID (cs_test_...).");
+      return;
+    }
+    setRecoveryBusy(true);
+    setPaymentError("");
+    setPaymentStatus("checking");
+    try {
+      const candidates = [quotationPayload];
+      // Old demo quotations used the date of payment in the quote number.
+      if (sourceName === "Synthetic RFQ demo.csv" && meta.quoteNumber.startsWith("QF-")) {
+        const oldMeta = { ...meta, quoteNumber: "QF-20261010-001" };
+        const oldPayload = JSON.stringify({ rfqLines, catalogue, manualMatches, meta: oldMeta, sourceName });
+        if (oldPayload !== quotationPayload) candidates.push(oldPayload);
+      }
+      for (const payload of candidates) {
+        const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(payload));
+        const fingerprint = Array.from(new Uint8Array(digest)).map((byte) => byte.toString(16).padStart(2, "0")).join("");
+        const response = await fetch("/api/verify-payment", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sessionId, fingerprint }), cache: "no-store"
+        });
+        if (!response.ok) throw new Error("Stripe verification is unavailable. Please try again later.");
+        if ((await response.json()).paid) {
+          const snapshot = JSON.parse(payload);
+          setMeta(snapshot.meta);
+          setAuthorizedPayload(payload);
+          localStorage.setItem("quoteflow_paid_receipt", JSON.stringify({ sessionId, payload }));
+          setPaymentStatus("paid");
+          setRecoverySessionId("");
+          setPaymentError("");
+          return;
+        }
+      }
+      setPaymentStatus("unpaid");
+      setPaymentError("Payment exists, but this quotation does not match its original fingerprint. No new charge was made.");
+    } catch (error) {
+      setPaymentStatus("unpaid");
+      setPaymentError(error instanceof Error ? error.message : "Could not verify payment.");
+    } finally {
+      setRecoveryBusy(false);
+    }
+  }
 
   async function startCheckout() {
     if (!readyLines.length || !/^[A-Z]{3}$/.test(meta.currency)) {
@@ -707,6 +755,16 @@ export default function QuoteWorkspace() {
         </div>
         <button type="button" onClick={startCheckout} disabled={checkoutBusy || paymentStatus !== "unpaid" || pricing.amount === null}>{checkoutBusy ? "Opening Stripe..." : "Pay with Stripe"}</button>
       </div>
+      {paymentStatus !== "paid" ? (
+        <div className="guardrail">
+          <strong>Already paid? Restore your download access</strong>
+          <span>Paste the Checkout Session ID from your own Stripe test dashboard. Verification happens securely on the server; no new payment is created.</span>
+          <div className="export-actions">
+            <input aria-label="Stripe Checkout Session ID" type="password" autoComplete="off" placeholder="cs_test_..." value={recoverySessionId} onChange={(event) => setRecoverySessionId(event.target.value)} />
+            <button type="button" onClick={recoverExistingPayment} disabled={recoveryBusy || paymentStatus === "checking"}>{recoveryBusy ? "Checking..." : "Restore paid download"}</button>
+          </div>
+        </div>
+      ) : null}
       <div className="export-row">
         <div>
           <strong>Generate quotation</strong>
