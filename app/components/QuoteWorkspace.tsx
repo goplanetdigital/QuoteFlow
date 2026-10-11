@@ -63,6 +63,7 @@ export default function QuoteWorkspace() {
   const [paymentError, setPaymentError] = useState("");
   const [recoverySessionId, setRecoverySessionId] = useState("");
   const [recoveryBusy, setRecoveryBusy] = useState(false);
+  const [recoveryMessage, setRecoveryMessage] = useState("");
   const [rfqLines, setRfqLines] = useState<RfqLine[]>(demoRfq);
   const [catalogue, setCatalogue] = useState<CatalogueItem[]>(demoCatalogue);
   const [sourceName, setSourceName] = useState("Synthetic RFQ demo.csv");
@@ -208,9 +209,11 @@ export default function QuoteWorkspace() {
   }, []);
 
   async function recoverExistingPayment() {
+    setRecoveryMessage("Checking your existing Stripe payment...");
     const sessionId = recoverySessionId.trim();
     if (!/^cs_test_[a-zA-Z0-9]+$/.test(sessionId)) {
       setPaymentError("Paste the complete Stripe Checkout Session ID (cs_test_...).");
+      setRecoveryMessage("Invalid Session ID. Copy the full cs_test_... value from Stripe Checkout Session.");
       return;
     }
     setRecoveryBusy(true);
@@ -240,14 +243,17 @@ export default function QuoteWorkspace() {
           setPaymentStatus("paid");
           setRecoverySessionId("");
           setPaymentError("");
+          setRecoveryMessage("Payment verified. PDF and Excel are now unlocked.");
           return;
         }
       }
       setPaymentStatus("unpaid");
       setPaymentError("Payment exists, but this quotation does not match its original fingerprint. No new charge was made.");
+      setRecoveryMessage("No matching paid quotation was found. Do not pay again; share this error message for investigation.");
     } catch (error) {
       setPaymentStatus("unpaid");
       setPaymentError(error instanceof Error ? error.message : "Could not verify payment.");
+      setRecoveryMessage("Verification failed. Check the error shown below and do not pay again.");
     } finally {
       setRecoveryBusy(false);
     }
@@ -761,8 +767,9 @@ export default function QuoteWorkspace() {
           <span>Paste the Checkout Session ID from your own Stripe test dashboard. Verification happens securely on the server; no new payment is created.</span>
           <div className="export-actions">
             <input aria-label="Stripe Checkout Session ID" type="password" autoComplete="off" placeholder="cs_test_..." value={recoverySessionId} onChange={(event) => setRecoverySessionId(event.target.value)} />
-            <button type="button" onClick={recoverExistingPayment} disabled={recoveryBusy || paymentStatus === "checking"}>{recoveryBusy ? "Checking..." : "Restore paid download"}</button>
+            <button type="button" onClick={recoverExistingPayment} disabled={recoveryBusy}>{recoveryBusy ? "Checking..." : "Restore paid download"}</button>
           </div>
+          {recoveryMessage ? <span role="status" aria-live="polite">{recoveryMessage}</span> : null}
         </div>
       ) : null}
       <div className="export-row">
