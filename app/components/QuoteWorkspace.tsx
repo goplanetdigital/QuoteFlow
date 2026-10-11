@@ -425,6 +425,70 @@ export default function QuoteWorkspace() {
     }
   }
 
+  async function downloadFreeDemoExcel() {
+    const XLSX = await import("xlsx");
+    const sample = buildQuote(demoRfq, demoCatalogue);
+    const rows = [
+      ["SYNTHETIC DEMO - NOT A CUSTOMER QUOTATION"],
+      ["No real customer data. Sample only."],
+      [],
+      ["Item code", "Description", "Quantity", "Unit", "Approved unit price", "Line total"],
+      ...sample.lines.filter((line) => line.reviewStatus === "ready").map((line) => [
+        line.matchedCode ?? line.code, line.matchedDescription ?? line.description,
+        line.quantity, line.unit, line.approvedUnitPrice, line.lineTotal
+      ]),
+      [],
+      ["Demo approved subtotal (USD)", sample.subtotal]
+    ];
+    const workbook = XLSX.utils.book_new();
+    const sheet = XLSX.utils.aoa_to_sheet(rows);
+    sheet["!cols"] = [{ wch: 20 }, { wch: 48 }, { wch: 12 }, { wch: 12 }, { wch: 24 }, { wch: 18 }];
+    XLSX.utils.book_append_sheet(workbook, sheet, "Synthetic Demo");
+    XLSX.writeFile(workbook, "QuoteFlow-SYNTHETIC-DEMO.xlsx");
+  }
+
+  function downloadFreeDemoPdf() {
+    const sample = buildQuote(demoRfq, demoCatalogue);
+    const lines = [
+      "QUOTEFLOW - SYNTHETIC DEMONSTRATION",
+      "NOT A CUSTOMER QUOTATION - NO REAL CUSTOMER DATA",
+      "",
+      "This is a fixed sample export. Paid customer exports require Stripe verification.",
+      "",
+      ...sample.lines.filter((line) => line.reviewStatus === "ready").map((line) =>
+        [line.matchedCode ?? line.code, line.description, "Qty: " + line.quantity, "USD " + (line.lineTotal ?? 0).toFixed(2)].join(" | ")
+      ),
+      "",
+      "Approved demo subtotal: USD " + sample.subtotal.toFixed(2),
+      "Review and blocked items are excluded."
+    ];
+    const escape = (value: string) => value.replaceAll("\\", "\\\\").replaceAll("(", "\\(").replaceAll(")", "\\)");
+    const stream = lines.map((line, i) => "BT /F1 10 Tf 40 " + (780 - i * 25) + " Td (" + escape(line.replace(/[^\\x20-\\x7E]/g, "?")) + ") Tj ET").join("\\n");
+    const objects = [
+      "<< /Type /Catalog /Pages 2 0 R >>",
+      "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+      "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
+      "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+      "<< /Length " + new TextEncoder().encode(stream).length + " >>\\nstream\\n" + stream + "\\nendstream"
+    ];
+    let pdf = "%PDF-1.4\\n";
+    const offsets = [0];
+    for (let i = 0; i < objects.length; i++) {
+      offsets.push(new TextEncoder().encode(pdf).length);
+      pdf += (i + 1) + " 0 obj\\n" + objects[i] + "\\nendobj\\n";
+    }
+    const xref = new TextEncoder().encode(pdf).length;
+    pdf += "xref\\n0 " + (objects.length + 1) + "\\n0000000000 65535 f \\n";
+    for (const offset of offsets.slice(1)) pdf += String(offset).padStart(10, "0") + " 00000 n \\n";
+    pdf += "trailer\\n<< /Size " + (objects.length + 1) + " /Root 1 0 R >>\\nstartxref\\n" + xref + "\\n%%EOF";
+    const url = URL.createObjectURL(new Blob([pdf], { type: "application/pdf" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "QuoteFlow-SYNTHETIC-DEMO.pdf";
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
   async function downloadQuoteExcel() {
     if (!(await verifyExportAccess())) return;
     if (!readyLines.length) {
@@ -772,6 +836,16 @@ export default function QuoteWorkspace() {
           {recoveryMessage ? <span role="status" aria-live="polite">{recoveryMessage}</span> : null}
         </div>
       ) : null}
+      <div className="export-row">
+        <div>
+          <strong>Try Demo — Free sample downloads</strong>
+          <span>Fixed synthetic example only. Clearly marked DEMO; it does not export your current quotation or bypass Stripe payment.</span>
+        </div>
+        <div className="export-actions">
+          <button type="button" className="secondary-button" onClick={downloadFreeDemoExcel}>Free Demo Excel</button>
+          <button type="button" onClick={downloadFreeDemoPdf}>Free Demo PDF</button>
+        </div>
+      </div>
       <div className="export-row">
         <div>
           <strong>Generate quotation</strong>
