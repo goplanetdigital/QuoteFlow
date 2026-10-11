@@ -346,8 +346,33 @@ export default function QuoteWorkspace() {
     setMessage("Synthetic RFQ and demo catalogue restored.");
   }
 
+  async function verifyExportAccess() {
+    if (paymentStatus !== "paid" || authorizedPayload !== quotationPayload) {
+      setPaymentStatus("unpaid");
+      setPaymentError("Payment required for this exact quotation.");
+      return false;
+    }
+    try {
+      const receipt = JSON.parse(localStorage.getItem("quoteflow_paid_receipt") || "{}");
+      if (typeof receipt.sessionId !== "string" || receipt.payload !== quotationPayload) throw new Error("Missing receipt");
+      const fingerprint = await quotationFingerprint();
+      const response = await fetch("/api/verify-payment", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId: receipt.sessionId, fingerprint }),
+        cache: "no-store"
+      });
+      if (!response.ok || !(await response.json()).paid) throw new Error("Unverified payment");
+      return true;
+    } catch {
+      setPaymentStatus("unpaid");
+      setPaymentError("Payment could not be verified for this quotation. Please refresh.");
+      return false;
+    }
+  }
+
   async function downloadQuoteExcel() {
-    if (paymentStatus !== "paid" || authorizedPayload !== quotationPayload) { setPaymentStatus("unpaid"); setPaymentError("Payment required for this exact quotation."); return; }
+    if (!(await verifyExportAccess())) return;
     if (!readyLines.length) {
       setMessage("No approved quotation lines are ready to export.");
       return;
@@ -403,7 +428,7 @@ export default function QuoteWorkspace() {
     setMessage("Quotation Excel generated from approved lines only.");
   }
 
-  function downloadPdf() {
+  async function downloadPdf() {
     if (paymentStatus !== "paid") { setPaymentError("Complete payment before downloading."); return; }
     if (!/^[A-Z]{3}$/.test(meta.currency)) {
       setMessage("Select the catalogue currency before downloading PDF.");
