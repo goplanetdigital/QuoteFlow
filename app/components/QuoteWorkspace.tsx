@@ -429,7 +429,7 @@ export default function QuoteWorkspace() {
   }
 
   async function downloadPdf() {
-    if (paymentStatus !== "paid") { setPaymentError("Complete payment before downloading."); return; }
+    if (!(await verifyExportAccess())) return;
     if (!/^[A-Z]{3}$/.test(meta.currency)) {
       setMessage("Select the catalogue currency before downloading PDF.");
       return;
