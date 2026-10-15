@@ -4,10 +4,13 @@ export const runtime = "nodejs";
 
 export async function POST(request: NextRequest) {
   const key = process.env.STRIPE_SECRET_KEY;
-  if (!key || !key.startsWith("sk_test_")) return NextResponse.json({ paid: false }, { status: 503 });
+  const isProduction = process.env.VERCEL_ENV === "production";
+  const expectedKeyPrefix = isProduction ? "sk_live_" : "sk_test_";
+  const expectedSessionPrefix = isProduction ? "cs_live_" : "cs_test_";
+  if (!key || !key.startsWith(expectedKeyPrefix)) return NextResponse.json({ paid: false }, { status: 503 });
   try {
     const { sessionId, fingerprint } = await request.json();
-    if (typeof sessionId !== "string" || !/^cs_test_[a-zA-Z0-9]+$/.test(sessionId) ||
+    if (typeof sessionId !== "string" || !sessionId.startsWith(expectedSessionPrefix) || !/^cs_(?:test|live)_[a-zA-Z0-9]+$/.test(sessionId) ||
         typeof fingerprint !== "string" || !/^[a-f0-9]{64}$/.test(fingerprint)) {
       return NextResponse.json({ paid: false }, { status: 400 });
     }
