@@ -21,7 +21,12 @@ export async function POST(request: NextRequest) {
     const session = await response.json();
     const paid = session.mode === "payment" && session.status === "complete" &&
       session.payment_status === "paid" && session.currency === "usd" &&
-      session.metadata?.fingerprint === fingerprint;
+      session.metadata?.fingerprint === fingerprint &&
+      Number.isSafeInteger(Number(session.metadata?.itemCount)) &&
+      Number(session.metadata.itemCount) >= 1 && Number(session.metadata.itemCount) <= 1000 &&
+      session.amount_total === (isProduction || process.env.QUOTE_STRIPE_TEST_MODE !== "true"
+        ? (Number(session.metadata.itemCount) <= 20 ? 1000 : Number(session.metadata.itemCount) <= 100 ? 2900 : Number(session.metadata.itemCount) <= 300 ? 5900 : 9900)
+        : 100);
     return NextResponse.json({ paid });
   } catch {
     return NextResponse.json({ paid: false }, { status: 400 });
