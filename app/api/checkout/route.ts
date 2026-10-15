@@ -22,7 +22,13 @@ export async function POST(request: NextRequest) {
     if (!amount || typeof fingerprint !== "string" || !/^[a-f0-9]{64}$/.test(fingerprint)) {
       return NextResponse.json({ error: "Invalid quotation." }, { status: 400 });
     }
-    const origin = new URL(request.url).origin;
+    const siteUrl = process.env.SITE_URL;
+    if (!siteUrl) return NextResponse.json({ error: "SITE_URL is not configured." }, { status: 503 });
+    const site = new URL(siteUrl);
+    if (site.protocol !== "https:" && !(site.protocol === "http:" && site.hostname === "localhost" && !isProduction)) {
+      return NextResponse.json({ error: "Invalid SITE_URL configuration." }, { status: 503 });
+    }
+    const origin = site.origin;
     const params = new URLSearchParams({
       mode: "payment",
       "line_items[0][price_data][currency]": "usd",
