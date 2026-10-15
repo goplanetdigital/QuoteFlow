@@ -211,9 +211,9 @@ export default function QuoteWorkspace() {
   async function recoverExistingPayment() {
     setRecoveryMessage("Checking your existing Stripe payment...");
     const sessionId = recoverySessionId.trim();
-    if (!/^cs_test_[a-zA-Z0-9]+$/.test(sessionId)) {
-      setPaymentError("Paste the complete Stripe Checkout Session ID (cs_test_...).");
-      setRecoveryMessage("Invalid Session ID. Copy the full cs_test_... value from Stripe Checkout Session.");
+    if (!/^cs_(?:test|live)_[a-zA-Z0-9]+$/.test(sessionId)) {
+      setPaymentError("Paste the complete Stripe Checkout Session ID.");
+      setRecoveryMessage("Invalid Session ID. Copy the full cs_test_... or cs_live_... value from Stripe Checkout Session.");
       return;
     }
     setRecoveryBusy(true);
