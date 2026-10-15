@@ -4,7 +4,7 @@ export const runtime = "nodejs";
 
 function amountForItems(count: number) {
   if (!Number.isSafeInteger(count) || count < 1 || count > 1000) return null;
-  if (process.env.QUOTE_STRIPE_TEST_MODE === "true") return 100;
+  if (process.env.VERCEL_ENV !== "production" && process.env.QUOTE_STRIPE_TEST_MODE === "true") return 100;
   return count <= 20 ? 1000 : count <= 100 ? 2900 : count <= 300 ? 5900 : 9900;
 }
 
