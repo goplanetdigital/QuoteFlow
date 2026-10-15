@@ -10,8 +10,10 @@ function amountForItems(count: number) {
 
 export async function POST(request: NextRequest) {
   const key = process.env.STRIPE_SECRET_KEY;
-  if (!key || !key.startsWith("sk_test_")) {
-    return NextResponse.json({ error: "Stripe test checkout is not configured." }, { status: 503 });
+  const isProduction = process.env.VERCEL_ENV === "production";
+  const expectedPrefix = isProduction ? "sk_live_" : "sk_test_";
+  if (!key || !key.startsWith(expectedPrefix)) {
+    return NextResponse.json({ error: "Stripe checkout is not configured for this environment." }, { status: 503 });
   }
   try {
     const { itemCount, fingerprint } = await request.json();
