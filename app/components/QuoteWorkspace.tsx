@@ -828,9 +828,9 @@ export default function QuoteWorkspace() {
       {paymentStatus !== "paid" ? (
         <div className="guardrail">
           <strong>Already paid? Restore your download access</strong>
-          <span>Paste the Checkout Session ID from your own Stripe test dashboard. Verification happens securely on the server; no new payment is created.</span>
+          <span>Paste the Checkout Session ID from your Stripe dashboard to restore a previous payment. Verification is secure and does not create a new charge.</span>
           <div className="export-actions">
-            <input aria-label="Stripe Checkout Session ID" type="password" autoComplete="off" placeholder="cs_test_..." value={recoverySessionId} onChange={(event) => setRecoverySessionId(event.target.value)} />
+            <input aria-label="Stripe Checkout Session ID" type="password" autoComplete="off" placeholder="cs_live_... or cs_test_..." value={recoverySessionId} onChange={(event) => setRecoverySessionId(event.target.value)} />
             <button type="button" onClick={recoverExistingPayment} disabled={recoveryBusy}>{recoveryBusy ? "Checking..." : "Restore paid download"}</button>
           </div>
           {recoveryMessage ? <span role="status" aria-live="polite">{recoveryMessage}</span> : null}
