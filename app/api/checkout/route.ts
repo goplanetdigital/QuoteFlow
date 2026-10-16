@@ -12,11 +12,11 @@ function amountForItems(count: number) {
 export async function POST(request: NextRequest) {
   const key = process.env.STRIPE_SECRET_KEY?.trim();
   const isProduction = process.env.VERCEL_ENV === "production";
-  const expectedPrefix = isProduction ? "sk_live_" : "sk_test_";
-  if (!key || !key.startsWith(expectedPrefix)) {
-    const reason = !key ? "missing" : key.startsWith("sk_test_") || key.startsWith("sk_live_") ? "wrong_mode" : "invalid_format";
+  const allowedPrefixes = isProduction ? ["sk_live_", "rk_live_"] : ["sk_test_", "rk_test_"];
+  if (!key || !allowedPrefixes.some((prefix) => key.startsWith(prefix))) {
+    const reason = !key ? "missing" : /^(?:sk|rk)_(?:test|live)_/.test(key) ? "wrong_mode" : "invalid_format";
     console.error("QuoteFlow checkout Stripe configuration mismatch", { environment: isProduction ? "production" : "preview", reason });
-    return NextResponse.json({ error: isProduction ? "Stripe Live checkout is unavailable. The deployed server does not have a valid live secret key. Please contact support; no payment was made." : "Stripe Test checkout is unavailable. Check the environment key.", code: "STRIPE_KEY_CONFIGURATION", reason }, { status: 503 });
+    return NextResponse.json({ error: isProduction ? "Stripe Live checkout is unavailable. The deployed server does not have a valid live Stripe API key. Please contact support; no payment was made." : "Stripe Test checkout is unavailable. Check the environment key.", code: "STRIPE_KEY_CONFIGURATION", reason }, { status: 503 });
   }
   try {
     const { payload } = await request.json();
