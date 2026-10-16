@@ -30,7 +30,7 @@ export async function POST(request: NextRequest) {
     if (!amount) {
       return NextResponse.json({ error: "Invalid quotation." }, { status: 400 });
     }
-    const siteUrl = process.env.SITE_URL;
+    const siteUrl = isProduction ? process.env.SITE_URL : request.nextUrl.origin;
     if (!siteUrl) return NextResponse.json({ error: "SITE_URL is not configured." }, { status: 503 });
     const site = new URL(siteUrl);
     if (site.protocol !== "https:" && !(site.protocol === "http:" && site.hostname === "localhost" && !isProduction)) {
