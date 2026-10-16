@@ -26,7 +26,8 @@ export async function POST(request: NextRequest) {
       Number(session.metadata.itemCount) >= 1 && Number(session.metadata.itemCount) <= 1000 &&
       session.amount_total === (isProduction || process.env.QUOTE_STRIPE_TEST_MODE !== "true"
         ? (Number(session.metadata.itemCount) <= 20 ? 1000 : Number(session.metadata.itemCount) <= 100 ? 2900 : Number(session.metadata.itemCount) <= 300 ? 5900 : 9900)
-        : 100);
+        : 100) &&
+      session.client_reference_id === fingerprint;
     return NextResponse.json({ paid });
   } catch {
     return NextResponse.json({ paid: false }, { status: 400 });
