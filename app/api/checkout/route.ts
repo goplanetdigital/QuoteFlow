@@ -35,6 +35,7 @@ export async function POST(request: NextRequest) {
       "line_items[0][price_data][unit_amount]": String(amount),
       "line_items[0][price_data][product_data][name]": "QuoteFlow quotation export (PDF + Excel)",
       "line_items[0][quantity]": "1",
+      "client_reference_id": fingerprint,
       "metadata[fingerprint]": fingerprint,
       "metadata[itemCount]": String(count),
       success_url: origin + "/?session_id={CHECKOUT_SESSION_ID}",
