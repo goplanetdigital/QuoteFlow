@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 
 export const runtime = "nodejs";
@@ -16,10 +17,15 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Stripe checkout is not configured for this environment." }, { status: 503 });
   }
   try {
-    const { itemCount, fingerprint } = await request.json();
-    const count = Number(itemCount);
+    const { payload } = await request.json();
+    if (typeof payload !== "string" || payload.length > 2_000_000 || payload.length < 2) {
+      return NextResponse.json({ error: "Invalid quotation payload." }, { status: 400 });
+    }
+    const parsed = JSON.parse(payload);
+    const count = Array.isArray(parsed?.rfqLines) ? parsed.rfqLines.length : 0;
+    const fingerprint = createHash("sha256").update(payload, "utf8").digest("hex");
     const amount = amountForItems(count);
-    if (!amount || typeof fingerprint !== "string" || !/^[a-f0-9]{64}$/.test(fingerprint)) {
+    if (!amount) {
       return NextResponse.json({ error: "Invalid quotation." }, { status: 400 });
     }
     const siteUrl = process.env.SITE_URL;
