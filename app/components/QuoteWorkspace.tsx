@@ -822,8 +822,11 @@ export default function QuoteWorkspace() {
           <strong>Stripe checkout · {testPriceMode ? "USD 1.00 TEST" : "USD " + (pricing.amount?.toFixed(2) ?? "custom")}</strong>
           <span>{paymentStatus === "paid" ? "Payment verified. PDF and Excel unlocked." : paymentStatus === "checking" ? "Verifying payment..." : "Pay to unlock both downloads."}</span>
           {paymentError ? <span role="alert">{paymentError}</span> : null}
+          {paymentStatus === "checking" ? <span role="status">Checking an earlier payment. Checkout is temporarily disabled to avoid duplicate charges.</span> : null}
+          {paymentStatus === "paid" ? <span role="status">This quotation is already paid. Use the download buttons below; no second payment is needed.</span> : null}
+          {pricing.amount === null ? <span role="status">Checkout is unavailable for this RFQ size.</span> : null}
         </div>
-        <button type="button" onClick={startCheckout} disabled={checkoutBusy || paymentStatus !== "unpaid" || pricing.amount === null}>{checkoutBusy ? "Opening Stripe..." : "Pay with Stripe"}</button>
+        <button type="button" onClick={startCheckout} disabled={checkoutBusy || paymentStatus !== "unpaid" || pricing.amount === null} title={checkoutBusy ? "Opening Stripe Checkout" : paymentStatus === "checking" ? "Verifying a previous payment; please wait" : paymentStatus === "paid" ? "Already paid: download your quotation below" : pricing.amount === null ? "This RFQ needs a custom quotation" : "Open Stripe Checkout"}>{checkoutBusy ? "Opening Stripe..." : paymentStatus === "checking" ? "Verifying payment..." : paymentStatus === "paid" ? "Payment verified" : pricing.amount === null ? "Contact us for pricing" : "Pay with Stripe"}</button>
       </div>
       {paymentStatus !== "paid" ? (
         <div className="guardrail">
