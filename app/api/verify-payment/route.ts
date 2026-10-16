@@ -3,11 +3,11 @@ import { NextRequest, NextResponse } from "next/server";
 export const runtime = "nodejs";
 
 export async function POST(request: NextRequest) {
-  const key = process.env.STRIPE_SECRET_KEY;
+  const key = process.env.STRIPE_SECRET_KEY?.trim();
   const isProduction = process.env.VERCEL_ENV === "production";
-  const expectedKeyPrefix = isProduction ? "sk_live_" : "sk_test_";
+  const allowedKeyPrefixes = isProduction ? ["sk_live_", "rk_live_"] : ["sk_test_", "rk_test_"];
   const expectedSessionPrefix = isProduction ? "cs_live_" : "cs_test_";
-  if (!key || !key.startsWith(expectedKeyPrefix)) return NextResponse.json({ paid: false }, { status: 503 });
+  if (!key || !allowedKeyPrefixes.some((prefix) => key.startsWith(prefix))) return NextResponse.json({ paid: false }, { status: 503 });
   try {
     const { sessionId, fingerprint } = await request.json();
     if (typeof sessionId !== "string" || !sessionId.startsWith(expectedSessionPrefix) || !/^cs_(?:test|live)_[a-zA-Z0-9]+$/.test(sessionId) ||
