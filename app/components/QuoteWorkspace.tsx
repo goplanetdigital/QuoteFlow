@@ -268,7 +268,7 @@ export default function QuoteWorkspace() {
     setPaymentError("");
     try {
       const fingerprint = await quotationFingerprint();
-      const response = await fetch("/api/checkout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ itemCount: rfqLines.length, fingerprint }) });
+      const response = await fetch("/api/checkout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ payload: quotationPayload }) });
       const result = await response.json();
       if (!response.ok || !result.url) throw new Error(result.error || "Checkout unavailable.");
       sessionStorage.setItem("quoteflow_pending", JSON.stringify({ payload: quotationPayload }));
