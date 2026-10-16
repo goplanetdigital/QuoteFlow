@@ -267,10 +267,10 @@ export default function QuoteWorkspace() {
     setCheckoutBusy(true);
     setPaymentError("");
     try {
-      const fingerprint = await quotationFingerprint();
       const response = await fetch("/api/checkout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ payload: quotationPayload }) });
       const result = await response.json();
-      if (!response.ok || !result.url) throw new Error(result.error || "Checkout unavailable.");
+      if (!response.ok || !result.url) throw new Error(result.error || `Checkout unavailable (HTTP ${response.status}).`);
+      if (typeof result.url !== "string" || !result.url.startsWith("https://checkout.stripe.com/")) throw new Error("Invalid Stripe checkout URL.");
       sessionStorage.setItem("quoteflow_pending", JSON.stringify({ payload: quotationPayload }));
       window.location.assign(result.url);
     } catch (error) {
