@@ -500,7 +500,7 @@ export default function QuoteWorkspace() {
     // Prevent spreadsheet formula injection from uploaded RFQ/catalogue/customer text.
     const excelText = (value: unknown) => {
       const text = String(value ?? "");
-      return /^[\\s\\u0000-\\u001f]*[=+@-]/.test(text) ? "\u0027" + text : text;
+      return /^[\s\u0000-\u001f]*[=+@-]/.test(text) ? "\u0027" + text : text;
     };
     const rows = readyLines.map((line, index) => ({
       No: index + 1,
