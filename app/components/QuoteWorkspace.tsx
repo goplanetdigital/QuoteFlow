@@ -497,24 +497,29 @@ export default function QuoteWorkspace() {
     }
 
     const XLSX = await import("xlsx");
+    // Prevent spreadsheet formula injection from uploaded RFQ/catalogue/customer text.
+    const excelText = (value: unknown) => {
+      const text = String(value ?? "");
+      return /^[\\s\\u0000-\\u001f]*[=+@-]/.test(text) ? "\u0027" + text : text;
+    };
     const rows = readyLines.map((line, index) => ({
       No: index + 1,
-      "Item Code": line.matchedCode ?? line.code,
-      Description: line.matchedDescription ?? line.description,
+      "Item Code": excelText(line.matchedCode ?? line.code),
+      Description: excelText(line.matchedDescription ?? line.description),
       Quantity: line.quantity,
-      Unit: line.unit,
+      Unit: excelText(line.unit),
       "Unit Price": line.approvedUnitPrice ?? "",
       Total: line.lineTotal ?? ""
     }));
 
     const details = [
       ["QUOTATION"],
-      ["Supplier", meta.supplierName],
-      ["Customer", meta.customerName],
-      ["Quote No.", meta.quoteNumber],
+      ["Supplier", excelText(meta.supplierName)],
+      ["Customer", excelText(meta.customerName)],
+      ["Quote No.", excelText(meta.quoteNumber)],
       ["Currency", meta.currency],
       ["Valid for", `${meta.validDays} days`],
-      ["Source RFQ", sourceName],
+      ["Source RFQ", excelText(sourceName)],
       [],
     ];
 
@@ -525,7 +530,7 @@ export default function QuoteWorkspace() {
       [
         [],
         ["Approved subtotal", quote.subtotal],
-        ["Notes", meta.notes || ""]
+        ["Notes", excelText(meta.notes || "")]
       ],
       { origin: -1 }
     );
@@ -542,7 +547,7 @@ export default function QuoteWorkspace() {
 
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, sheet, "Quotation");
-    XLSX.writeFile(workbook, `${meta.quoteNumber || "quotation"}.xlsx`);
+    XLSX.writeFile(workbook, `${meta.quoteNumber.replace(/[^a-zA-Z0-9_-]/g, "_") || "quotation"}.xlsx`);
     setMessage("Quotation Excel generated from approved lines only.");
   }
 
