@@ -7,7 +7,7 @@ function validStripeSignature(payload: string, header: string, secret: string): 
   const fields = header.split(",").map((part) => part.trim().split("="));
   const timestamp = fields.find(([key]) => key === "t")?.[1];
   const signatures = fields.filter(([key]) => key === "v1").map(([, value]) => value);
-  if (!timestamp || !/^\\d+$/.test(timestamp) || signatures.length === 0) return false;
+  if (!timestamp || !/^\d+$/.test(timestamp) || signatures.length === 0) return false;
   const seconds = Number(timestamp);
   if (!Number.isSafeInteger(seconds) || Math.abs(Math.floor(Date.now() / 1000) - seconds) > 300) return false;
   const digest = createHmac("sha256", secret).update(timestamp + "." + payload).digest();
