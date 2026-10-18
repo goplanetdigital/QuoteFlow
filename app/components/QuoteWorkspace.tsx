@@ -64,13 +64,13 @@ export default function QuoteWorkspace() {
   const [recoverySessionId, setRecoverySessionId] = useState("");
   const [recoveryBusy, setRecoveryBusy] = useState(false);
   const [recoveryMessage, setRecoveryMessage] = useState("");
-  const [rfqLines, setRfqLines] = useState<RfqLine[]>(demoRfq);
-  const [catalogue, setCatalogue] = useState<CatalogueItem[]>(demoCatalogue);
-  const [sourceName, setSourceName] = useState("Synthetic RFQ demo.csv");
-  const [catalogueName, setCatalogueName] = useState("Built-in demo catalogue");
+  const [rfqLines, setRfqLines] = useState<RfqLine[]>([]);
+  const [catalogue, setCatalogue] = useState<CatalogueItem[]>([]);
+  const [sourceName, setSourceName] = useState("No RFQ uploaded");
+  const [catalogueName, setCatalogueName] = useState("No catalogue uploaded");
   const [manualMatches, setManualMatches] = useState<Record<string, string>>({});
   const [message, setMessage] = useState(
-    "Demo data loaded. Upload an RFQ and your approved catalogue."
+    "Upload your RFQ and approved catalogue to get started."
   );
   const [meta, setMeta] = useState<QuoteMeta>({
     supplierName: "Your Company",
@@ -713,14 +713,14 @@ export default function QuoteWorkspace() {
     <section id="workspace" className="workspace">
       <div className="workspace-head">
         <div>
-          <div className="eyebrow">MVP-03 · end-to-end quotation workflow</div>
+          <div className="eyebrow">QuoteFlow · quotation workspace</div>
           <h2>RFQ to quotation</h2>
           <p className="muted">RFQ: {sourceName}</p>
           <p className="muted">Catalogue: {catalogueName} · {catalogue.length} items</p>
         </div>
 
         <div className="workspace-actions">
-          <button className="secondary-button" type="button" onClick={resetDemo}>Reset demo</button>
+          <button className="secondary-button" type="button" onClick={resetDemo}>Try demo</button>
           <label className="upload-button secondary-upload">
             Upload catalogue
             <input
