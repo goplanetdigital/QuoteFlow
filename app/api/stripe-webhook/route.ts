@@ -112,9 +112,18 @@ export async function POST(request: NextRequest) {
         stripe_payment_intent_id = COALESCE(
           quoteflow_orders.stripe_payment_intent_id, EXCLUDED.stripe_payment_intent_id
         ),
-        stripe_event_id = EXCLUDED.stripe_event_id,
-        stripe_event_created_at = EXCLUDED.stripe_event_created_at,
-        updated_at = now()
+        stripe_event_id = CASE
+          WHEN quoteflow_orders.payment_status = 'paid' THEN quoteflow_orders.stripe_event_id
+          ELSE EXCLUDED.stripe_event_id
+        END,
+        stripe_event_created_at = CASE
+          WHEN quoteflow_orders.payment_status = 'paid' THEN quoteflow_orders.stripe_event_created_at
+          ELSE EXCLUDED.stripe_event_created_at
+        END,
+        updated_at = CASE
+          WHEN quoteflow_orders.payment_status = 'paid' THEN quoteflow_orders.updated_at
+          ELSE now()
+        END
     `;
   } catch (error) {
     console.error("QuoteFlow webhook: order persistence failed", {
