@@ -103,6 +103,7 @@ export async function POST(request: NextRequest) {
              ${paid ? "paid" : "failed"}, ${event.id},
              to_timestamp(${(event as typeof event & { created?: number }).created ?? 0})
       FROM event_insert
+      WHERE true
       ON CONFLICT (stripe_session_id) DO UPDATE SET
         payment_status = CASE
           WHEN quoteflow_orders.payment_status = 'paid' THEN 'paid'
