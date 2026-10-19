@@ -279,13 +279,13 @@ export function parsePdfText(text: string): PdfParseResult {
 
     // PDF text extraction can reorder a label and its numeric value.
     // Reject validity labels anywhere in a candidate line, including "30 Valid: days".
-    if (/\\bvalid(?:ity)?\\s*:\\s*(?:days?\\b|\\d+\\b)/i.test(raw) ||
-        /\\bvalid(?:ity)?\\s+days?\\b/i.test(raw)) {
+    if (/\bvalid(?:ity)?\s*:\s*(?:days?\b|\d+\b)/i.test(raw) ||
+        /\bvalid(?:ity)?\s+days?\b/i.test(raw)) {
       continue;
     }
     // Validity fields can be written "Valid: days 30" or "Valid : 30 days".
     // A word boundary after ':' is not reliable, so check the metadata prefix directly.
-    if (/^valid(?:ity)?\\s*(?::|for\\b|days?\\b|until\\b)/i.test(raw)) {
+    if (/^valid(?:ity)?\s*(?::|for\b|days?\b|until\b)/i.test(raw)) {
       continue;
     }
     // Document metadata, totals and payment terms are not purchasable RFQ items.
@@ -299,7 +299,7 @@ export function parsePdfText(text: string): PdfParseResult {
 
     // Refuse header/footer labels even if the PDF extractor places the number first.
     // The first item marker (e.g. "1.") is handled separately below.
-    if (/^(?:\\d+(?:\\.\\d+)?\\s+)?(?:valid|validity|subtotal|total|approved|payment|invoice)\\s*:/i.test(raw)) {
+    if (/^(?:\d+(?:\.\d+)?\s+)?(?:valid|validity|subtotal|total|approved|payment|invoice)\s*:/i.test(raw)) {
       continue;
     }
 
@@ -343,8 +343,8 @@ export function parsePdfText(text: string): PdfParseResult {
     // Guard the reconstructed description too: PDF extractors may split a
     // metadata label and its numeric value across columns or reorder tokens.
     const reconstructed = contentTokens.join(" ");
-    if (/\\bvalid\\s*:\\s*days?\\b/i.test(reconstructed) ||
-        /\\b(?:subtotal|grand\\s*total|amount\\s*due)\\s*:/i.test(reconstructed)) {
+    if (/\bvalid\s*:\s*days?\b/i.test(reconstructed) ||
+        /\b(?:subtotal|grand\s*total|amount\s*due)\s*:/i.test(reconstructed)) {
       continue;
     }
 
