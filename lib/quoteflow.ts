@@ -277,6 +277,15 @@ export function parsePdfText(text: string): PdfParseResult {
       continue;
     }
 
+    // Document metadata, totals and payment terms are not purchasable RFQ items.
+    // Reject these before looking for numbers, since dates and totals look like quantities.
+    if (/\\b(?:subtotal|sub\\s*total|grand\\s*total|total\\s*amount|amount\\s*due|valid(?:ity)?\\s*(?::|for|days?|until)|payment\\s*terms?|deposit|invoice|tax\\s*total|discount|shipping|delivery\\s*(?:date|terms?)|due\\s*date|issue\\s*date|date\\s*of|approved\\s*subtotal)\\b/i.test(raw)) {
+      continue;
+    }
+    if (/^(?:address|bill\\s*to|ship\\s*to|customer|supplier|contact|telephone|phone|email|reference|prepared\\s*by|approved\\s*by)\\b/i.test(raw)) {
+      continue;
+    }
+
     const tokens = raw.split(" ");
     if (tokens.length < 2) continue;
 
