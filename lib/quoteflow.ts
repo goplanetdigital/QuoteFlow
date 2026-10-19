@@ -277,6 +277,12 @@ export function parsePdfText(text: string): PdfParseResult {
       continue;
     }
 
+    // PDF text extraction can reorder a label and its numeric value.
+    // Reject validity labels anywhere in a candidate line, including "30 Valid: days".
+    if (/\\bvalid(?:ity)?\\s*:\\s*(?:days?\\b|\\d+\\b)/i.test(raw) ||
+        /\\bvalid(?:ity)?\\s+days?\\b/i.test(raw)) {
+      continue;
+    }
     // Validity fields can be written "Valid: days 30" or "Valid : 30 days".
     // A word boundary after ':' is not reliable, so check the metadata prefix directly.
     if (/^valid(?:ity)?\\s*(?::|for\\b|days?\\b|until\\b)/i.test(raw)) {
