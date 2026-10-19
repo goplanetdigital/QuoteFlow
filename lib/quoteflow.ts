@@ -297,6 +297,12 @@ export function parsePdfText(text: string): PdfParseResult {
       continue;
     }
 
+    // Refuse header/footer labels even if the PDF extractor places the number first.
+    // The first item marker (e.g. "1.") is handled separately below.
+    if (/^(?:\\d+(?:\\.\\d+)?\\s+)?(?:valid|validity|subtotal|total|approved|payment|invoice)\\s*:/i.test(raw)) {
+      continue;
+    }
+
     const tokens = raw.split(" ");
     if (tokens.length < 2) continue;
 
