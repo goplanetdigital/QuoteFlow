@@ -340,6 +340,14 @@ export function parsePdfText(text: string): PdfParseResult {
 
     if (!contentTokens.length) continue;
 
+    // Guard the reconstructed description too: PDF extractors may split a
+    // metadata label and its numeric value across columns or reorder tokens.
+    const reconstructed = contentTokens.join(" ");
+    if (/\\bvalid\\s*:\\s*days?\\b/i.test(reconstructed) ||
+        /\\b(?:subtotal|grand\\s*total|amount\\s*due)\\s*:/i.test(reconstructed)) {
+      continue;
+    }
+
     const first = contentTokens[0];
     const code = looksLikeCode(first) ? first : "";
     const description = (code ? contentTokens.slice(1) : contentTokens).join(" ").trim();
