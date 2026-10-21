@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, timingSafeEqual } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 
 export const runtime = "nodejs";
@@ -19,14 +19,18 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: isProduction ? "Stripe Live checkout is unavailable. The deployed server does not have a valid live Stripe API key. Please contact support; no payment was made." : "Stripe Test checkout is unavailable. Check the environment key.", code: "STRIPE_KEY_CONFIGURATION", reason }, { status: 503 });
   }
   try {
-    const { payload } = await request.json();
+    const { payload, liveTestToken } = await request.json();
+    const configuredToken = process.env.QUOTE_LIVE_TEST_TOKEN?.trim();
+    const liveTest = isProduction && typeof liveTestToken === "string" && !!configuredToken &&
+      Buffer.byteLength(liveTestToken) === Buffer.byteLength(configuredToken) &&
+      timingSafeEqual(Buffer.from(liveTestToken), Buffer.from(configuredToken));
     if (typeof payload !== "string" || payload.length > 2_000_000 || payload.length < 2) {
       return NextResponse.json({ error: "Invalid quotation payload." }, { status: 400 });
     }
     const parsed = JSON.parse(payload);
     const count = Array.isArray(parsed?.rfqLines) ? parsed.rfqLines.length : 0;
     const fingerprint = createHash("sha256").update(payload, "utf8").digest("hex");
-    const amount = amountForItems(count);
+    const amount = liveTest ? 100 : amountForItems(count);
     if (!amount) {
       return NextResponse.json({ error: "Invalid quotation." }, { status: 400 });
     }
@@ -46,6 +50,7 @@ export async function POST(request: NextRequest) {
       "client_reference_id": fingerprint,
       "metadata[fingerprint]": fingerprint,
       "metadata[itemCount]": String(count),
+      "metadata[liveTest]": liveTest ? "true" : "false",
       success_url: origin + "/?session_id={CHECKOUT_SESSION_ID}",
       cancel_url: origin + "/?checkout=cancelled"
     });
