@@ -58,13 +58,14 @@ export async function POST(request: NextRequest) {
     id?: string; mode?: string; currency?: string; amount_total?: number;
     payment_status?: string; payment_intent?: string | null;
     client_reference_id?: string;
-    metadata?: { fingerprint?: string; itemCount?: string };
+    metadata?: { fingerprint?: string; itemCount?: string; liveTest?: string };
   };
   const checkout = (event as typeof event & { data?: { object?: CheckoutSession }; created?: number }).data?.object;
   const fingerprint = checkout?.metadata?.fingerprint;
   const count = Number(checkout?.metadata?.itemCount);
   const isProduction = process.env.VERCEL_ENV === "production";
-  const expectedAmount = !isProduction && process.env.QUOTE_STRIPE_TEST_MODE === "true"
+  const expectedAmount = isProduction && checkout?.metadata?.liveTest === "true" && process.env.QUOTE_LIVE_TEST_TOKEN
+    ? 100 : !isProduction && process.env.QUOTE_STRIPE_TEST_MODE === "true"
     ? 100 : count <= 20 ? 1000 : count <= 100 ? 2900 : count <= 300 ? 5900 : 9900;
   if (!checkout?.id?.startsWith(isProduction ? "cs_live_" : "cs_test_") ||
       checkout.mode !== "payment" || checkout.currency !== "usd" ||
