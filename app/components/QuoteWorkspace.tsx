@@ -391,6 +391,24 @@ export default function QuoteWorkspace() {
     });
   }
 
+  function editRfqLine(id: string, patch: Partial<RfqLine>) {
+    setRfqLines((current) => current.map((line) => line.id === id ? { ...line, ...patch } : line));
+    setManualMatches((current) => { const next = { ...current }; delete next[id]; return next; });
+    setMessage("RFQ line updated. Review the catalogue match and approved price before checkout.");
+  }
+
+  function addRfqLine() {
+    const id = String(Date.now());
+    setRfqLines((current) => [...current, { id, code: "", description: "New item - edit description", quantity: 1, unit: "pcs" }]);
+    setMessage("New RFQ item added. Enter the correct description and quantity.");
+  }
+
+  function removeRfqLine(id: string) {
+    setRfqLines((current) => current.filter((line) => line.id !== id));
+    setManualMatches((current) => { const next = { ...current }; delete next[id]; return next; });
+    setMessage("Incorrect RFQ item removed.");
+  }
+
   function resetDemo() {
     setRfqLines(demoRfq);
     setCatalogue(demoCatalogue);
@@ -766,12 +784,12 @@ export default function QuoteWorkspace() {
           <tbody>
             {quote.lines.map((row) => (
               <tr key={row.id}>
-                <td>{row.code || "—"}</td>
+                <td><input aria-label="RFQ item code" value={row.code} onChange={(e) => editRfqLine(row.id, { code: e.target.value })} style={{ width: 85 }} /></td>
                 <td>
-                  <strong>{row.description}</strong>
+                  <textarea aria-label="RFQ item description" value={row.description} rows={2} onChange={(e) => editRfqLine(row.id, { description: e.target.value })} style={{ minWidth: 170, width: "100%" }} />
                   {row.matchedDescription && row.matchedDescription !== row.description ? <small>Matched: {row.matchedDescription}</small> : null}
                 </td>
-                <td>{row.quantity} {row.unit}</td>
+                <td><input aria-label="RFQ quantity" type="number" min="1" value={row.quantity} onChange={(e) => editRfqLine(row.id, { quantity: Math.max(1, Number(e.target.value) || 1) })} style={{ width: 65 }} /><input aria-label="RFQ unit" value={row.unit} onChange={(e) => editRfqLine(row.id, { unit: e.target.value })} style={{ width: 65 }} /></td>
                 <td>
                   <span className={"match " + row.matchStatus}>{row.matchStatus}</span>
                   {row.matchedCode ? <small>{row.matchedCode}</small> : null}
@@ -797,12 +815,15 @@ export default function QuoteWorkspace() {
                       </select>
                     </div>
                   ) : manualMatches[row.id] ? <small>Reviewer approved</small> : null}
+                  <button type="button" className="mini-button" onClick={() => removeRfqLine(row.id)}>Remove incorrect line</button>
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+
+      <button type="button" className="mini-button" onClick={addRfqLine}>+ Add missing RFQ item</button>
 
       <div className="summary">
         <div><strong>{quote.lines.length}</strong><span>RFQ lines</span></div>
