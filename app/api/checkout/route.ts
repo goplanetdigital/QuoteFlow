@@ -26,6 +26,7 @@ export async function POST(request: NextRequest) {
     const origin = new URL(request.url).origin;
     const params = new URLSearchParams({
       mode: "payment",
+      allow_promotion_codes: "true",
       "line_items[0][price_data][currency]": "usd",
       "line_items[0][price_data][unit_amount]": String(amount),
       "line_items[0][price_data][product_data][name]": "QuoteFlow quotation export (PDF + Excel)",
