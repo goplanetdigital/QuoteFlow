@@ -853,6 +853,12 @@ export default function QuoteWorkspace() {
           {paymentStatus === "paid" ? <span role="status">This quotation is already paid. Use the download buttons below; no second payment is needed.</span> : null}
           {pricing.amount === null ? <span role="status">Checkout is unavailable for this RFQ size.</span> : null}
         </div>
+        {typeof window !== "undefined" && new URLSearchParams(window.location.search).has("live_test") ? (
+          <label style={{ display: "block", marginBottom: 12 }}>
+            Restricted Live Test Authorization (not a payment card number)
+            <input type="password" autoComplete="off" value={liveTestToken} onChange={(event) => setLiveTestToken(event.target.value)} placeholder="Enter one-time test authorization" />
+          </label>
+        ) : null}
         <button type="button" onClick={startCheckout} disabled={checkoutBusy || paymentStatus !== "unpaid" || pricing.amount === null || quote.blockedCount > 0 || quote.reviewCount > 0 || readyLines.length !== rfqLines.length} title={checkoutBusy ? "Opening Stripe Checkout" : paymentStatus === "checking" ? "Verifying a previous payment; please wait" : paymentStatus === "paid" ? "Already paid: download your quotation below" : pricing.amount === null ? "This RFQ needs a custom quotation" : "Open Stripe Checkout"}>{checkoutBusy ? "Opening Stripe..." : paymentStatus === "checking" ? "Verifying payment..." : paymentStatus === "paid" ? "Payment verified" : pricing.amount === null ? "Contact us for pricing" : "Pay with Stripe"}</button>
       </div>
       {paymentStatus !== "paid" ? (
