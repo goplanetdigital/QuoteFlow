@@ -4,14 +4,17 @@ export const runtime = "nodejs";
 
 function amountForItems(count: number) {
   if (!Number.isSafeInteger(count) || count < 1 || count > 1000) return null;
-  if (process.env.QUOTE_STRIPE_TEST_MODE === "true") return 100;
+  if (process.env.QUOTE_STRIPE_TEST_MODE === "true" && process.env.STRIPE_SECRET_KEY?.startsWith("sk_test_")) return 100;
   return count <= 20 ? 1000 : count <= 100 ? 2900 : count <= 300 ? 5900 : 9900;
 }
 
 export async function POST(request: NextRequest) {
   const key = process.env.STRIPE_SECRET_KEY;
-  if (!key || !key.startsWith("sk_test_")) {
-    return NextResponse.json({ error: "Stripe test checkout is not configured." }, { status: 503 });
+  if (!key || !/^sk_(test|live)_/.test(key)) {
+    return NextResponse.json({ error: "Stripe checkout is not configured." }, { status: 503 });
+  }
+  if (key.startsWith("sk_live_") && process.env.QUOTE_STRIPE_TEST_MODE === "true") {
+    return NextResponse.json({ error: "Disable test pricing before enabling live checkout." }, { status: 503 });
   }
   try {
     const { itemCount, fingerprint } = await request.json();
