@@ -45,7 +45,7 @@ export async function POST(request: Request) {
         }
         return rows.sort((a, b) => b.y - a.y)
           .map((row) => row.cells.sort((a, b) => a.x - b.x).map((cell) => cell.value).join(" "))
-          .join("\\n");
+          .join("\n");
       }
     });
 
