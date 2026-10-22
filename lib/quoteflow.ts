@@ -273,7 +273,7 @@ export function parsePdfText(text: string): PdfParseResult {
   const parsed: RfqLine[] = [];
 
   for (const raw of rawLines) {
-    if (/^(rfq|request for quotation|quotation|description|item|qty|quantity|unit|uom|price|amount)\b/i.test(raw)) {
+    if (/^(rfq|request for quotation|quotation|description|item|qty|quantity|unit|uom|price|amount|date|issued|prepared|requested|currency)\b/i.test(raw)) {
       continue;
     }
 
@@ -302,6 +302,9 @@ export function parsePdfText(text: string): PdfParseResult {
     if (/^(?:\d+(?:\.\d+)?\s+)?(?:valid|validity|subtotal|total|approved|payment|invoice)\s*:/i.test(raw)) {
       continue;
     }
+
+    // Exclude reordered PDF date fields (e.g. "Date: 22 October 2026").
+    if (/\b(?:date|october|january|february|march|april|may|june|july|august|september|november|december)\b/i.test(raw) && /\b20\d{2}\b/.test(raw)) continue;
 
     const tokens = raw.split(" ");
     if (tokens.length < 2) continue;
