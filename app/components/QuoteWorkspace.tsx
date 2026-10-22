@@ -260,8 +260,8 @@ export default function QuoteWorkspace() {
   }
 
   async function startCheckout() {
-    if (!readyLines.length || !/^[A-Z]{3}$/.test(meta.currency)) {
-      setPaymentError("Approve quotation lines and select a valid catalogue currency first.");
+    if (!readyLines.length || quote.blockedCount > 0 || quote.reviewCount > 0 || readyLines.length !== rfqLines.length || !/^[A-Z]{3}$/.test(meta.currency)) {
+      setPaymentError("All RFQ items must have approved catalogue prices and a valid currency before checkout.");
       return;
     }
     setCheckoutBusy(true);
@@ -852,7 +852,7 @@ export default function QuoteWorkspace() {
           {paymentStatus === "paid" ? <span role="status">This quotation is already paid. Use the download buttons below; no second payment is needed.</span> : null}
           {pricing.amount === null ? <span role="status">Checkout is unavailable for this RFQ size.</span> : null}
         </div>
-        <button type="button" onClick={startCheckout} disabled={checkoutBusy || paymentStatus !== "unpaid" || pricing.amount === null} title={checkoutBusy ? "Opening Stripe Checkout" : paymentStatus === "checking" ? "Verifying a previous payment; please wait" : paymentStatus === "paid" ? "Already paid: download your quotation below" : pricing.amount === null ? "This RFQ needs a custom quotation" : "Open Stripe Checkout"}>{checkoutBusy ? "Opening Stripe..." : paymentStatus === "checking" ? "Verifying payment..." : paymentStatus === "paid" ? "Payment verified" : pricing.amount === null ? "Contact us for pricing" : "Pay with Stripe"}</button>
+        <button type="button" onClick={startCheckout} disabled={checkoutBusy || paymentStatus !== "unpaid" || pricing.amount === null || quote.blockedCount > 0 || quote.reviewCount > 0 || readyLines.length !== rfqLines.length} title={checkoutBusy ? "Opening Stripe Checkout" : paymentStatus === "checking" ? "Verifying a previous payment; please wait" : paymentStatus === "paid" ? "Already paid: download your quotation below" : pricing.amount === null ? "This RFQ needs a custom quotation" : "Open Stripe Checkout"}>{checkoutBusy ? "Opening Stripe..." : paymentStatus === "checking" ? "Verifying payment..." : paymentStatus === "paid" ? "Payment verified" : pricing.amount === null ? "Contact us for pricing" : "Pay with Stripe"}</button>
       </div>
       {paymentStatus !== "paid" ? (
         <div className="guardrail">
