@@ -255,6 +255,8 @@ function detectUnit(value: string) {
   if (["set", "sets"].includes(v)) return "set";
   if (["box", "boxes"].includes(v)) return "box";
   if (["roll", "rolls"].includes(v)) return "roll";
+  if (["ream", "reams"].includes(v)) return "ream";
+  if (["pad", "pads"].includes(v)) return "pad";
   return "";
 }
 
@@ -351,6 +353,8 @@ export function parsePdfText(text: string): PdfParseResult {
       continue;
     }
 
+    // A leading 1/1. in a table is a row number, not part of the product.
+    if (/^\\d{1,3}\\.?$/.test(contentTokens[0] ?? "") && contentTokens.length > 2) contentTokens.shift();
     const first = contentTokens[0];
     const code = looksLikeCode(first) ? first : "";
     const description = (code ? contentTokens.slice(1) : contentTokens).join(" ").trim();
