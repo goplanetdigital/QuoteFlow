@@ -58,6 +58,7 @@ function defaultQuoteNumber() {
 export default function QuoteWorkspace() {
   const [paymentStatus, setPaymentStatus] = useState<"unpaid" | "checking" | "paid">("unpaid");
   const [checkoutBusy, setCheckoutBusy] = useState(false);
+  const [liveTestToken, setLiveTestToken] = useState("");
   const [testPriceMode, setTestPriceMode] = useState(false);
   const [authorizedPayload, setAuthorizedPayload] = useState<string | null>(null);
   const [paymentError, setPaymentError] = useState("");
@@ -267,7 +268,7 @@ export default function QuoteWorkspace() {
     setCheckoutBusy(true);
     setPaymentError("");
     try {
-      const response = await fetch("/api/checkout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ payload: quotationPayload }) });
+      const response = await fetch("/api/checkout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ payload: quotationPayload, ...(liveTestToken.trim() ? { liveTestToken: liveTestToken.trim() } : {}) }) });
       const result = await response.json();
       if (!response.ok || !result.url) throw new Error(result.error || `Checkout unavailable (HTTP ${response.status}).`);
       if (typeof result.url !== "string" || !result.url.startsWith("https://checkout.stripe.com/")) throw new Error("Invalid Stripe checkout URL.");
