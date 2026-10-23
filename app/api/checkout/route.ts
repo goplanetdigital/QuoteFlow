@@ -78,8 +78,8 @@ export async function POST(request: NextRequest) {
     try {
       const sql = neon(databaseUrl);
       await sql`INSERT INTO quoteflow_quote_snapshots (fingerprint, payload, expires_at)
-        VALUES (${fingerprint}, ${payload}::jsonb, now() + interval '90 days')
-        ON CONFLICT (fingerprint) DO UPDATE SET expires_at = GREATEST(quoteflow_quote_snapshots.expires_at, now() + interval '90 days')`;
+        VALUES (${fingerprint}, ${JSON.stringify(payload)}::jsonb, now() + interval '90 days')
+        ON CONFLICT (fingerprint) DO UPDATE SET payload = EXCLUDED.payload, expires_at = GREATEST(quoteflow_quote_snapshots.expires_at, now() + interval '90 days')`;
     } catch (error) {
       console.error("QuoteFlow snapshot persistence failed", error instanceof Error ? error.message : "unknown");
       return NextResponse.json({ error: "Secure quotation storage is temporarily unavailable. No payment was made." }, { status: 503 });
