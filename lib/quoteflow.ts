@@ -279,6 +279,12 @@ export function parsePdfText(text: string): PdfParseResult {
       continue;
     }
 
+    // Ignore branded page footers and standalone currency markers, even when
+    // PDF extraction places a page number or quantity before the label.
+    if (/^(?:\\d+\\s+)?(?:quoteflow|by\\s+allset(?:\\.co)?|page\\s+\\d+(?:\\s+of\\s+\\d+)?|(?:MYR|USD|SGD|EUR|GBP|AUD|CAD|JPY|CNY|HKD)\\s*[:\\-]?\\s*\\d*)$/i.test(raw)) {
+      continue;
+    }
+
     // PDF text extraction can reorder a label and its numeric value.
     // Reject validity labels anywhere in a candidate line, including "30 Valid: days".
     if (/\bvalid(?:ity)?\s*:\s*(?:days?\b|\d+\b)/i.test(raw) ||
