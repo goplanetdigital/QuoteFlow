@@ -3,15 +3,17 @@ import { NextRequest, NextResponse } from "next/server";
 export const runtime = "nodejs";
 
 export async function POST(request: NextRequest) {
-  const key = process.env.STRIPE_SECRET_KEY;
-  if (!key || !/^sk_(test|live)_/.test(key)) return NextResponse.json({ paid: false }, { status: 503 });
+  const key = process.env.STRIPE_SECRET_KEY?.trim();
+  const isProduction = process.env.VERCEL_ENV === "production";
+  const allowedKeyPrefixes = isProduction ? ["sk_live_", "rk_live_"] : ["sk_test_", "rk_test_"];
+  const expectedSessionPrefix = isProduction ? "cs_live_" : "cs_test_";
+  if (!key || !allowedKeyPrefixes.some((prefix) => key.startsWith(prefix))) return NextResponse.json({ paid: false }, { status: 503 });
   try {
     const { sessionId, fingerprint } = await request.json();
-    if (typeof sessionId !== "string" || !/^cs_(test|live)_[a-zA-Z0-9]+$/.test(sessionId) ||
+    if (typeof sessionId !== "string" || !sessionId.startsWith(expectedSessionPrefix) || !/^cs_(?:test|live)_[a-zA-Z0-9]+$/.test(sessionId) ||
         typeof fingerprint !== "string" || !/^[a-f0-9]{64}$/.test(fingerprint)) {
       return NextResponse.json({ paid: false }, { status: 400 });
     }
-    if ((key.startsWith("sk_live_") && !sessionId.startsWith("cs_live_")) || (key.startsWith("sk_test_") && !sessionId.startsWith("cs_test_"))) return NextResponse.json({ paid: false }, { status: 400 });
     const response = await fetch("https://api.stripe.com/v1/checkout/sessions/" + encodeURIComponent(sessionId), {
       headers: { Authorization: "Bearer " + key }, cache: "no-store"
     });
@@ -19,7 +21,13 @@ export async function POST(request: NextRequest) {
     const session = await response.json();
     const paid = session.mode === "payment" && session.status === "complete" &&
       session.payment_status === "paid" && session.currency === "usd" &&
-      session.metadata?.fingerprint === fingerprint;
+      session.metadata?.fingerprint === fingerprint &&
+      Number.isSafeInteger(Number(session.metadata?.itemCount)) &&
+      Number(session.metadata.itemCount) >= 1 && Number(session.metadata.itemCount) <= 1000 &&
+      session.amount_total === (isProduction && session.metadata?.liveTest === "true" && process.env.QUOTE_LIVE_TEST_TOKEN ? 100 : isProduction || process.env.QUOTE_STRIPE_TEST_MODE !== "true"
+        ? (Number(session.metadata.itemCount) <= 20 ? 1000 : Number(session.metadata.itemCount) <= 100 ? 2900 : Number(session.metadata.itemCount) <= 300 ? 5900 : 9900)
+        : 100) &&
+      session.client_reference_id === fingerprint;
     return NextResponse.json({ paid });
   } catch {
     return NextResponse.json({ paid: false }, { status: 400 });
