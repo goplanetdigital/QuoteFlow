@@ -887,6 +887,12 @@ export default function QuoteWorkspace() {
           <button type="button" onClick={downloadFreeDemoPdf}>Free Demo PDF</button>
         </div>
       </div>
+      {paymentStatus === "paid" ? (
+        <div className="guardrail" role="status" aria-live="polite" style={{ borderColor: "#16a34a" }}>
+          <strong>Payment successful — your quotation is ready!</strong>
+          <span>Download your PDF and Excel below. Both files are included in your payment; no additional charge is required.</span>
+        </div>
+      ) : null}
       <div className="export-row">
         <div>
           <strong>Generate quotation</strong>
