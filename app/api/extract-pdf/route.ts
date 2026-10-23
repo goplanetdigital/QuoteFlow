@@ -29,7 +29,25 @@ export async function POST(request: Request) {
 
     const bytes = new Uint8Array(await file.arrayBuffer());
     const pdfParse = (await import("pdf-parse")).default;
-    const parsed = await pdfParse(bytes);
+    // Reconstruct rows from PDF text coordinates rather than trusting PDF stream order.
+    // Columnar PDFs often expose quantities before descriptions in raw extraction.
+    const parsed = await pdfParse(bytes, {
+      pagerender: async (pageData: any) => {
+        const content = await pageData.getTextContent({ normalizeWhitespace: false, disableCombineTextItems: true });
+        const items = (content.items as any[]).filter((item) => typeof item.str === "string" && item.str.trim());
+        const rows: { y: number; cells: { x: number; value: string }[] }[] = [];
+        for (const item of items) {
+          const x = Number(item.transform?.[4] ?? 0);
+          const y = Number(item.transform?.[5] ?? 0);
+          let row = rows.find((entry) => Math.abs(entry.y - y) <= 2.5);
+          if (!row) { row = { y, cells: [] }; rows.push(row); }
+          row.cells.push({ x, value: item.str.trim() });
+        }
+        return rows.sort((a, b) => b.y - a.y)
+          .map((row) => row.cells.sort((a, b) => a.x - b.x).map((cell) => cell.value).join(" "))
+          .join("\n");
+      }
+    });
 
     const text = String(parsed.text ?? "").trim();
 
