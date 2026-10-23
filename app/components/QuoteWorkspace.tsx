@@ -59,6 +59,7 @@ export default function QuoteWorkspace() {
   const [paymentStatus, setPaymentStatus] = useState<"unpaid" | "checking" | "paid">("unpaid");
   const [checkoutBusy, setCheckoutBusy] = useState(false);
   const [liveTestToken, setLiveTestToken] = useState("");
+  const [showLiveTestAuthorization, setShowLiveTestAuthorization] = useState(false);
   const [testPriceMode, setTestPriceMode] = useState(false);
   const [authorizedPayload, setAuthorizedPayload] = useState<string | null>(null);
   const [paymentError, setPaymentError] = useState("");
@@ -117,6 +118,10 @@ export default function QuoteWorkspace() {
       blockedCount: lines.filter((line) => line.reviewStatus === "blocked").length
     };
   }, [rfqLines, catalogue, manualMatches]);
+
+  useEffect(() => {
+    setShowLiveTestAuthorization(new URLSearchParams(window.location.search).has("live_test"));
+  }, []);
 
   useEffect(() => {
     fetch("/api/checkout-config", { cache: "no-store" })
@@ -853,7 +858,7 @@ export default function QuoteWorkspace() {
           {paymentStatus === "paid" ? <span role="status">This quotation is already paid. Use the download buttons below; no second payment is needed.</span> : null}
           {pricing.amount === null ? <span role="status">Checkout is unavailable for this RFQ size.</span> : null}
         </div>
-        {typeof window !== "undefined" && new URLSearchParams(window.location.search).has("live_test") ? (
+        {showLiveTestAuthorization ? (
           <label style={{ display: "block", marginBottom: 12 }}>
             Restricted Live Test Authorization (not a payment card number)
             <input type="password" autoComplete="off" value={liveTestToken} onChange={(event) => setLiveTestToken(event.target.value)} placeholder="Enter one-time test authorization" />
