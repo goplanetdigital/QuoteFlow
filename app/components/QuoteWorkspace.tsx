@@ -133,10 +133,10 @@ export default function QuoteWorkspace() {
   const pricing = useMemo(() => {
     const count = rfqLines.length;
     if (count === 0) return { label: "No RFQ items", amount: null as number | null };
-    if (count <= 20) return { label: "Basic", amount: 10 };
-    if (count <= 100) return { label: "Standard", amount: 29 };
-    if (count <= 300) return { label: "Business", amount: 59 };
-    if (count <= 1000) return { label: "Bulk", amount: 99 };
+    if (count <= 20) return { label: "Basic", amount: 5 };
+    if (count <= 100) return { label: "Standard", amount: 15 };
+    if (count <= 300) return { label: "Business", amount: 29 };
+    if (count <= 1000) return { label: "Bulk", amount: 49 };
     return { label: "Enterprise - custom quote", amount: null as number | null };
   }, [rfqLines.length]);
 
