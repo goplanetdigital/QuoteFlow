@@ -899,6 +899,7 @@ export default function QuoteWorkspace() {
           <span>Only Ready lines are included. Review and Blocked lines remain excluded.</span>
         </div>
         <div className="export-actions">
+          <button type="button" onClick={async () => { if (!(await verifyExportAccess())) return; await downloadPdf(); await downloadQuoteExcel(); }} disabled={paymentStatus !== "paid"} title="Download both files; your browser may ask permission for multiple downloads">Download PDF + Excel</button>
           <button type="button" className="secondary-button" onClick={downloadQuoteExcel} disabled={paymentStatus !== "paid"}>Download Excel</button>
           <button type="button" onClick={downloadPdf} disabled={paymentStatus !== "paid"}>Download PDF</button>
         </div>
