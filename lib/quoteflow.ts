@@ -255,6 +255,8 @@ function detectUnit(value: string) {
   if (["set", "sets"].includes(v)) return "set";
   if (["box", "boxes"].includes(v)) return "box";
   if (["roll", "rolls"].includes(v)) return "roll";
+  if (["ream", "reams"].includes(v)) return "ream";
+  if (["pad", "pads"].includes(v)) return "pad";
   return "";
 }
 
@@ -273,9 +275,38 @@ export function parsePdfText(text: string): PdfParseResult {
   const parsed: RfqLine[] = [];
 
   for (const raw of rawLines) {
-    if (/^(rfq|request for quotation|quotation|description|item|qty|quantity|unit|uom|price|amount)\b/i.test(raw)) {
+    if (/^(rfq|request for quotation|quotation|description|item|qty|quantity|unit|uom|price|amount|date|issued|prepared|requested|currency)\b/i.test(raw)) {
       continue;
     }
+
+    // PDF text extraction can reorder a label and its numeric value.
+    // Reject validity labels anywhere in a candidate line, including "30 Valid: days".
+    if (/\bvalid(?:ity)?\s*:\s*(?:days?\b|\d+\b)/i.test(raw) ||
+        /\bvalid(?:ity)?\s+days?\b/i.test(raw)) {
+      continue;
+    }
+    // Validity fields can be written "Valid: days 30" or "Valid : 30 days".
+    // A word boundary after ':' is not reliable, so check the metadata prefix directly.
+    if (/^valid(?:ity)?\s*(?::|for\b|days?\b|until\b)/i.test(raw)) {
+      continue;
+    }
+    // Document metadata, totals and payment terms are not purchasable RFQ items.
+    // Reject these before looking for numbers, since dates and totals look like quantities.
+    if (/\b(?:subtotal|sub\s*total|grand\s*total|total\s*amount|amount\s*due|valid(?:ity)?\s*(?::|for|days?|until)|payment\s*terms?|deposit|invoice|tax\s*total|discount|shipping|delivery\s*(?:date|terms?)|due\s*date|issue\s*date|date\s*of|approved\s*subtotal)\b/i.test(raw)) {
+      continue;
+    }
+    if (/^(?:address|bill\s*to|ship\s*to|customer|supplier|contact|telephone|phone|email|reference|prepared\s*by|approved\s*by)\b/i.test(raw)) {
+      continue;
+    }
+
+    // Refuse header/footer labels even if the PDF extractor places the number first.
+    // The first item marker (e.g. "1.") is handled separately below.
+    if (/^(?:\d+(?:\.\d+)?\s+)?(?:valid|validity|subtotal|total|approved|payment|invoice)\s*:/i.test(raw)) {
+      continue;
+    }
+
+    // Exclude reordered PDF date fields (e.g. "Date: 22 October 2026").
+    if (/\b(?:date|october|january|february|march|april|may|june|july|august|september|november|december)\b/i.test(raw) && /\b20\d{2}\b/.test(raw)) continue;
 
     const tokens = raw.split(" ");
     if (tokens.length < 2) continue;
@@ -314,6 +345,16 @@ export function parsePdfText(text: string): PdfParseResult {
 
     if (!contentTokens.length) continue;
 
+    // Guard the reconstructed description too: PDF extractors may split a
+    // metadata label and its numeric value across columns or reorder tokens.
+    const reconstructed = contentTokens.join(" ");
+    if (/\bvalid\s*:\s*days?\b/i.test(reconstructed) ||
+        /\b(?:subtotal|grand\s*total|amount\s*due)\s*:/i.test(reconstructed)) {
+      continue;
+    }
+
+    // A leading 1/1. in a table is a row number, not part of the product.
+    if (/^\\d{1,3}\\.?$/.test(contentTokens[0] ?? "") && contentTokens.length > 2) contentTokens.shift();
     const first = contentTokens[0];
     const code = looksLikeCode(first) ? first : "";
     const description = (code ? contentTokens.slice(1) : contentTokens).join(" ").trim();
