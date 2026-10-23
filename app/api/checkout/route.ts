@@ -6,7 +6,7 @@ export const runtime = "nodejs";
 function amountForItems(count: number) {
   if (!Number.isSafeInteger(count) || count < 1 || count > 1000) return null;
   if (process.env.VERCEL_ENV !== "production" && process.env.QUOTE_STRIPE_TEST_MODE === "true") return 100;
-  return count <= 20 ? 1000 : count <= 100 ? 2900 : count <= 300 ? 5900 : 9900;
+  return count <= 20 ? 500 : count <= 100 ? 1500 : count <= 300 ? 2900 : 4900;
 }
 
 export async function POST(request: NextRequest) {
@@ -50,6 +50,7 @@ export async function POST(request: NextRequest) {
       "client_reference_id": fingerprint,
       "metadata[fingerprint]": fingerprint,
       "metadata[itemCount]": String(count),
+      "metadata[pricingVersion]": "2",
       "metadata[liveTest]": liveTest ? "true" : "false",
       success_url: origin + "/?session_id={CHECKOUT_SESSION_ID}",
       cancel_url: origin + "/?checkout=cancelled"
