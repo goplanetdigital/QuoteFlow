@@ -226,6 +226,29 @@ export default function QuoteWorkspace() {
     setPaymentError("");
     setPaymentStatus("checking");
     try {
+      const recovery = await fetch("/api/recover-quotation", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId }), cache: "no-store"
+      });
+      if (recovery.ok) {
+        const result = await recovery.json();
+        if (typeof result.payload === "string") {
+          const restored = JSON.parse(result.payload);
+          if (Array.isArray(restored.rfqLines) && Array.isArray(restored.catalogue) && restored.meta) {
+            setRfqLines(restored.rfqLines);
+            setCatalogue(restored.catalogue);
+            setManualMatches(restored.manualMatches || {});
+            setMeta(restored.meta);
+            setSourceName(restored.sourceName || "");
+            setAuthorizedPayload(result.payload);
+            localStorage.setItem("quoteflow_paid_receipt", JSON.stringify({ sessionId, payload: result.payload }));
+            setPaymentStatus("paid");
+            setRecoverySessionId("");
+            setRecoveryMessage("Payment verified and quotation restored.");
+            return;
+          }
+        }
+      }
       const candidates = [quotationPayload];
       // Old demo quotations used the date of payment in the quote number.
       if (sourceName === "Synthetic RFQ demo.csv" && meta.quoteNumber.startsWith("QF-")) {
