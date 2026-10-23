@@ -150,6 +150,8 @@ export async function POST(request: NextRequest) {
     if (email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       const from = process.env.QUOTE_EMAIL_FROM?.trim() || "QuoteFlow <orders@allsetintl.com>";
       const siteUrl = process.env.SITE_URL?.trim() || "https://quote-flow-go-planet-digital.vercel.app";
+      const recoveryUrl = new URL(siteUrl);
+      recoveryUrl.searchParams.set("recover_session", checkout.id);
       try {
         const resendResponse = await fetch("https://api.resend.com/emails", {
           method: "POST",
@@ -160,7 +162,7 @@ export async function POST(request: NextRequest) {
           },
           body: JSON.stringify({
             from, to: [email], subject: "QuoteFlow payment confirmed",
-            text: "Your QuoteFlow payment has been confirmed.\\n\\nReturn to the browser where you created your quotation to download your PDF and Excel files: " + siteUrl + "\\n\\nIf your download is locked, use Already paid? Restore your download access with your Stripe Checkout Session ID: " + checkout.id + "\\n\\nPlease keep your quotation data in that browser. This email is a payment receipt, not a file attachment or permanent file backup.\\n\\nby ALLSET.co"
+            text: "Your QuoteFlow payment has been confirmed.\\n\\nOpen your quotation recovery page: " + recoveryUrl.toString() + "\\n\\nIf your quotation was created before secure snapshot storage was introduced, return to the original browser to download PDF and Excel.\\n\\nThis email contains a recovery link, not file attachments.\\n\\nby ALLSET.co"
           }), cache: "no-store"
         });
         if (!resendResponse.ok) {
