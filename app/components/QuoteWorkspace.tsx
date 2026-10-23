@@ -58,14 +58,21 @@ function defaultQuoteNumber() {
 export default function QuoteWorkspace() {
   const [paymentStatus, setPaymentStatus] = useState<"unpaid" | "checking" | "paid">("unpaid");
   const [checkoutBusy, setCheckoutBusy] = useState(false);
+  const [liveTestToken, setLiveTestToken] = useState("");
+  const [showLiveTestAuthorization, setShowLiveTestAuthorization] = useState(false);
+  const [testPriceMode, setTestPriceMode] = useState(false);
+  const [authorizedPayload, setAuthorizedPayload] = useState<string | null>(null);
   const [paymentError, setPaymentError] = useState("");
-  const [rfqLines, setRfqLines] = useState<RfqLine[]>(demoRfq);
-  const [catalogue, setCatalogue] = useState<CatalogueItem[]>(demoCatalogue);
-  const [sourceName, setSourceName] = useState("Synthetic RFQ demo.csv");
-  const [catalogueName, setCatalogueName] = useState("Built-in demo catalogue");
+  const [recoverySessionId, setRecoverySessionId] = useState("");
+  const [recoveryBusy, setRecoveryBusy] = useState(false);
+  const [recoveryMessage, setRecoveryMessage] = useState("");
+  const [rfqLines, setRfqLines] = useState<RfqLine[]>([]);
+  const [catalogue, setCatalogue] = useState<CatalogueItem[]>([]);
+  const [sourceName, setSourceName] = useState("No RFQ uploaded");
+  const [catalogueName, setCatalogueName] = useState("No catalogue uploaded");
   const [manualMatches, setManualMatches] = useState<Record<string, string>>({});
   const [message, setMessage] = useState(
-    "Demo data loaded. Upload an RFQ and your approved catalogue."
+    "Upload your RFQ and approved catalogue to get started."
   );
   const [meta, setMeta] = useState<QuoteMeta>({
     supplierName: "Your Company",
@@ -112,6 +119,17 @@ export default function QuoteWorkspace() {
     };
   }, [rfqLines, catalogue, manualMatches]);
 
+  useEffect(() => {
+    setShowLiveTestAuthorization(new URLSearchParams(window.location.search).has("live_test"));
+  }, []);
+
+  useEffect(() => {
+    fetch("/api/checkout-config", { cache: "no-store" })
+      .then((response) => response.json())
+      .then((config) => setTestPriceMode(config.testPriceMode === true))
+      .catch(() => setTestPriceMode(false));
+  }, []);
+
   const pricing = useMemo(() => {
     const count = rfqLines.length;
     if (count === 0) return { label: "No RFQ items", amount: null as number | null };
@@ -128,6 +146,14 @@ export default function QuoteWorkspace() {
   );
 
   const quotationPayload = JSON.stringify({ rfqLines, catalogue, manualMatches, meta, sourceName });
+  useEffect(() => {
+    if (paymentStatus === "paid" && authorizedPayload !== quotationPayload) {
+      setPaymentStatus("unpaid");
+      setAuthorizedPayload(null);
+      setPaymentError("Quotation changed. A new payment is required for the updated quotation.");
+    }
+  }, [quotationPayload, paymentStatus, authorizedPayload]);
+
   async function quotationFingerprint() {
     const data = new TextEncoder().encode(quotationPayload);
     const hash = await crypto.subtle.digest("SHA-256", data);
@@ -135,46 +161,122 @@ export default function QuoteWorkspace() {
   }
 
   useEffect(() => {
-    setPaymentStatus("unpaid");
-    const sessionId = new URLSearchParams(window.location.search).get("session_id");
-    if (!sessionId) return;
-    const saved = sessionStorage.getItem("quoteflow_pending");
+    const params = new URLSearchParams(window.location.search);
+    const returnedSessionId = params.get("session_id");
+    const stored = localStorage.getItem("quoteflow_paid_receipt");
+    const pending = sessionStorage.getItem("quoteflow_pending");
+    const saved = returnedSessionId ? pending || stored : stored;
     if (!saved) return;
+
     try {
-      const pending = JSON.parse(saved);
-      if (pending.sessionId && pending.sessionId !== sessionId) return;
-      const payload = pending.payload as string;
-      if (!payload) return;
+      const receipt = JSON.parse(saved) as { payload?: string; sessionId?: string };
+      const sessionId = returnedSessionId || receipt.sessionId;
+      const payload = receipt.payload;
+      if (!sessionId || !payload || (returnedSessionId && receipt.sessionId && receipt.sessionId !== returnedSessionId)) return;
       const snapshot = JSON.parse(payload);
+      if (!Array.isArray(snapshot.rfqLines) || !Array.isArray(snapshot.catalogue) || !snapshot.meta) return;
+      setPaymentStatus("checking");
       setRfqLines(snapshot.rfqLines);
       setCatalogue(snapshot.catalogue);
-      setManualMatches(snapshot.manualMatches);
+      setManualMatches(snapshot.manualMatches || {});
       setMeta(snapshot.meta);
-      setSourceName(snapshot.sourceName);
-      setPaymentStatus("checking");
+      setSourceName(snapshot.sourceName || "");
       const bytes = new TextEncoder().encode(payload);
       crypto.subtle.digest("SHA-256", bytes).then((hash) => {
         const fingerprint = Array.from(new Uint8Array(hash)).map((byte) => byte.toString(16).padStart(2, "0")).join("");
-        return fetch("/api/verify-payment", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sessionId, fingerprint }) });
-      }).then((response) => response.json()).then((result) => {
-        setPaymentStatus(result.paid ? "paid" : "unpaid");
-        if (!result.paid) setPaymentError("Payment not verified.");
-      }).catch(() => { setPaymentStatus("unpaid"); setPaymentError("Could not verify payment."); });
-    } catch { setPaymentStatus("unpaid"); }
+        return fetch("/api/verify-payment", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sessionId, fingerprint })
+        });
+      }).then((response) => {
+        if (!response.ok) throw new Error("Verification unavailable");
+        return response.json();
+      }).then((result) => {
+        if (result.paid) {
+          setAuthorizedPayload(payload);
+          setPaymentStatus("paid");
+          localStorage.setItem("quoteflow_paid_receipt", JSON.stringify({ sessionId, payload }));
+          sessionStorage.removeItem("quoteflow_pending");
+          if (returnedSessionId) window.history.replaceState({}, "", window.location.pathname);
+          setPaymentError("");
+        } else {
+          setPaymentStatus("unpaid");
+          setPaymentError("Saved payment could not be verified.");
+          localStorage.removeItem("quoteflow_paid_receipt");
+        }
+      }).catch(() => {
+        setPaymentStatus("unpaid");
+        setPaymentError("Could not verify saved payment. Please try refreshing.");
+      });
+    } catch {
+      setPaymentStatus("unpaid");
+    }
   }, []);
 
+  async function recoverExistingPayment() {
+    setRecoveryMessage("Checking your existing Stripe payment...");
+    const sessionId = recoverySessionId.trim();
+    if (!/^cs_(?:test|live)_[a-zA-Z0-9]+$/.test(sessionId)) {
+      setPaymentError("Paste the complete Stripe Checkout Session ID.");
+      setRecoveryMessage("Invalid Session ID. Copy the full cs_test_... or cs_live_... value from Stripe Checkout Session.");
+      return;
+    }
+    setRecoveryBusy(true);
+    setPaymentError("");
+    setPaymentStatus("checking");
+    try {
+      const candidates = [quotationPayload];
+      // Old demo quotations used the date of payment in the quote number.
+      if (sourceName === "Synthetic RFQ demo.csv" && meta.quoteNumber.startsWith("QF-")) {
+        const oldMeta = { ...meta, quoteNumber: "QF-20261010-001" };
+        const oldPayload = JSON.stringify({ rfqLines, catalogue, manualMatches, meta: oldMeta, sourceName });
+        if (oldPayload !== quotationPayload) candidates.push(oldPayload);
+      }
+      for (const payload of candidates) {
+        const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(payload));
+        const fingerprint = Array.from(new Uint8Array(digest)).map((byte) => byte.toString(16).padStart(2, "0")).join("");
+        const response = await fetch("/api/verify-payment", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sessionId, fingerprint }), cache: "no-store"
+        });
+        if (!response.ok) throw new Error("Stripe verification is unavailable. Please try again later.");
+        if ((await response.json()).paid) {
+          const snapshot = JSON.parse(payload);
+          setMeta(snapshot.meta);
+          setAuthorizedPayload(payload);
+          localStorage.setItem("quoteflow_paid_receipt", JSON.stringify({ sessionId, payload }));
+          setPaymentStatus("paid");
+          setRecoverySessionId("");
+          setPaymentError("");
+          setRecoveryMessage("Payment verified. PDF and Excel are now unlocked.");
+          return;
+        }
+      }
+      setPaymentStatus("unpaid");
+      setPaymentError("Payment exists, but this quotation does not match its original fingerprint. No new charge was made.");
+      setRecoveryMessage("No matching paid quotation was found. Do not pay again; share this error message for investigation.");
+    } catch (error) {
+      setPaymentStatus("unpaid");
+      setPaymentError(error instanceof Error ? error.message : "Could not verify payment.");
+      setRecoveryMessage("Verification failed. Check the error shown below and do not pay again.");
+    } finally {
+      setRecoveryBusy(false);
+    }
+  }
+
   async function startCheckout() {
-    if (!readyLines.length || !/^[A-Z]{3}$/.test(meta.currency)) {
-      setPaymentError("Approve quotation lines and select a valid catalogue currency first.");
+    if (!readyLines.length || quote.blockedCount > 0 || quote.reviewCount > 0 || readyLines.length !== rfqLines.length || !/^[A-Z]{3}$/.test(meta.currency)) {
+      setPaymentError("All RFQ items must have approved catalogue prices and a valid currency before checkout.");
       return;
     }
     setCheckoutBusy(true);
     setPaymentError("");
     try {
-      const fingerprint = await quotationFingerprint();
-      const response = await fetch("/api/checkout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ itemCount: rfqLines.length, fingerprint }) });
+      const response = await fetch("/api/checkout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ payload: quotationPayload, ...(liveTestToken.trim() ? { liveTestToken: liveTestToken.trim() } : {}) }) });
       const result = await response.json();
-      if (!response.ok || !result.url) throw new Error(result.error || "Checkout unavailable.");
+      if (!response.ok || !result.url) throw new Error(result.error || `Checkout unavailable (HTTP ${response.status}).`);
+      if (typeof result.url !== "string" || !result.url.startsWith("https://checkout.stripe.com/")) throw new Error("Invalid Stripe checkout URL.");
       sessionStorage.setItem("quoteflow_pending", JSON.stringify({ payload: quotationPayload }));
       window.location.assign(result.url);
     } catch (error) {
@@ -295,6 +397,24 @@ export default function QuoteWorkspace() {
     });
   }
 
+  function editRfqLine(id: string, patch: Partial<RfqLine>) {
+    setRfqLines((current) => current.map((line) => line.id === id ? { ...line, ...patch } : line));
+    setManualMatches((current) => { const next = { ...current }; delete next[id]; return next; });
+    setMessage("RFQ line updated. Review the catalogue match and approved price before checkout.");
+  }
+
+  function addRfqLine() {
+    const id = String(Date.now());
+    setRfqLines((current) => [...current, { id, code: "", description: "New item - edit description", quantity: 1, unit: "pcs" }]);
+    setMessage("New RFQ item added. Enter the correct description and quantity.");
+  }
+
+  function removeRfqLine(id: string) {
+    setRfqLines((current) => current.filter((line) => line.id !== id));
+    setManualMatches((current) => { const next = { ...current }; delete next[id]; return next; });
+    setMessage("Incorrect RFQ item removed.");
+  }
+
   function resetDemo() {
     setRfqLines(demoRfq);
     setCatalogue(demoCatalogue);
@@ -304,32 +424,126 @@ export default function QuoteWorkspace() {
     setMessage("Synthetic RFQ and demo catalogue restored.");
   }
 
+  async function verifyExportAccess() {
+    if (paymentStatus !== "paid" || authorizedPayload !== quotationPayload) {
+      setPaymentStatus("unpaid");
+      setPaymentError("Payment required for this exact quotation.");
+      return false;
+    }
+    try {
+      const receipt = JSON.parse(localStorage.getItem("quoteflow_paid_receipt") || "{}");
+      if (typeof receipt.sessionId !== "string" || receipt.payload !== quotationPayload) throw new Error("Missing receipt");
+      const fingerprint = await quotationFingerprint();
+      const response = await fetch("/api/verify-payment", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId: receipt.sessionId, fingerprint }),
+        cache: "no-store"
+      });
+      if (!response.ok || !(await response.json()).paid) throw new Error("Unverified payment");
+      return true;
+    } catch {
+      setPaymentStatus("unpaid");
+      setPaymentError("Payment could not be verified for this quotation. Please refresh.");
+      return false;
+    }
+  }
+
+  async function downloadFreeDemoExcel() {
+    const XLSX = await import("xlsx");
+    const sample = buildQuote(demoRfq, demoCatalogue);
+    const rows = [
+      ["SYNTHETIC DEMO - NOT A CUSTOMER QUOTATION"],
+      ["No real customer data. Sample only."],
+      [],
+      ["Item code", "Description", "Quantity", "Unit", "Approved unit price", "Line total"],
+      ...sample.lines.filter((line) => line.reviewStatus === "ready").map((line) => [
+        line.matchedCode ?? line.code, line.matchedDescription ?? line.description,
+        line.quantity, line.unit, line.approvedUnitPrice, line.lineTotal
+      ]),
+      [],
+      ["Demo approved subtotal (USD)", sample.subtotal]
+    ];
+    const workbook = XLSX.utils.book_new();
+    const sheet = XLSX.utils.aoa_to_sheet(rows);
+    sheet["!cols"] = [{ wch: 20 }, { wch: 48 }, { wch: 12 }, { wch: 12 }, { wch: 24 }, { wch: 18 }];
+    XLSX.utils.book_append_sheet(workbook, sheet, "Synthetic Demo");
+    XLSX.writeFile(workbook, "QuoteFlow-SYNTHETIC-DEMO.xlsx");
+  }
+
+  function downloadFreeDemoPdf() {
+    const sample = buildQuote(demoRfq, demoCatalogue);
+    const lines = [
+      "QUOTEFLOW - SYNTHETIC DEMONSTRATION",
+      "NOT A CUSTOMER QUOTATION - NO REAL CUSTOMER DATA",
+      "",
+      "This is a fixed sample export. Paid customer exports require Stripe verification.",
+      "",
+      ...sample.lines.filter((line) => line.reviewStatus === "ready").map((line) =>
+        [line.matchedCode ?? line.code, line.description, "Qty: " + line.quantity, "USD " + (line.lineTotal ?? 0).toFixed(2)].join(" | ")
+      ),
+      "",
+      "Approved demo subtotal: USD " + sample.subtotal.toFixed(2),
+      "Review and blocked items are excluded."
+    ];
+    const escape = (value: string) => value.replaceAll("\\", "\\\\").replaceAll("(", "\\(").replaceAll(")", "\\)");
+    const stream = lines.map((line, i) => "BT /F1 10 Tf 40 " + (780 - i * 25) + " Td (" + escape(line.replace(/[^\\x20-\\x7E]/g, "?")) + ") Tj ET").join("\\n");
+    const objects = [
+      "<< /Type /Catalog /Pages 2 0 R >>",
+      "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+      "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
+      "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+      "<< /Length " + new TextEncoder().encode(stream).length + " >>\\nstream\\n" + stream + "\\nendstream"
+    ];
+    let pdf = "%PDF-1.4\\n";
+    const offsets = [0];
+    for (let i = 0; i < objects.length; i++) {
+      offsets.push(new TextEncoder().encode(pdf).length);
+      pdf += (i + 1) + " 0 obj\\n" + objects[i] + "\\nendobj\\n";
+    }
+    const xref = new TextEncoder().encode(pdf).length;
+    pdf += "xref\\n0 " + (objects.length + 1) + "\\n0000000000 65535 f \\n";
+    for (const offset of offsets.slice(1)) pdf += String(offset).padStart(10, "0") + " 00000 n \\n";
+    pdf += "trailer\\n<< /Size " + (objects.length + 1) + " /Root 1 0 R >>\\nstartxref\\n" + xref + "\\n%%EOF";
+    const url = URL.createObjectURL(new Blob([pdf], { type: "application/pdf" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "QuoteFlow-SYNTHETIC-DEMO.pdf";
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
   async function downloadQuoteExcel() {
-    if (paymentStatus !== "paid") { setPaymentError("Complete payment before downloading."); return; }
+    if (!(await verifyExportAccess())) return;
     if (!readyLines.length) {
       setMessage("No approved quotation lines are ready to export.");
       return;
     }
 
     const XLSX = await import("xlsx");
+    // Prevent spreadsheet formula injection from uploaded RFQ/catalogue/customer text.
+    const excelText = (value: unknown) => {
+      const text = String(value ?? "");
+      return /^[\s\u0000-\u001f]*[=+@-]/.test(text) ? "\u0027" + text : text;
+    };
     const rows = readyLines.map((line, index) => ({
       No: index + 1,
-      "Item Code": line.matchedCode ?? line.code,
-      Description: line.matchedDescription ?? line.description,
+      "Item Code": excelText(line.matchedCode ?? line.code),
+      Description: excelText(line.matchedDescription ?? line.description),
       Quantity: line.quantity,
-      Unit: line.unit,
+      Unit: excelText(line.unit),
       "Unit Price": line.approvedUnitPrice ?? "",
       Total: line.lineTotal ?? ""
     }));
 
     const details = [
       ["QUOTATION"],
-      ["Supplier", meta.supplierName],
-      ["Customer", meta.customerName],
-      ["Quote No.", meta.quoteNumber],
+      ["Supplier", excelText(meta.supplierName)],
+      ["Customer", excelText(meta.customerName)],
+      ["Quote No.", excelText(meta.quoteNumber)],
       ["Currency", meta.currency],
       ["Valid for", `${meta.validDays} days`],
-      ["Source RFQ", sourceName],
+      ["Source RFQ", excelText(sourceName)],
       [],
     ];
 
@@ -340,7 +554,7 @@ export default function QuoteWorkspace() {
       [
         [],
         ["Approved subtotal", quote.subtotal],
-        ["Notes", meta.notes || ""]
+        ["Notes", excelText(meta.notes || "")]
       ],
       { origin: -1 }
     );
@@ -357,12 +571,12 @@ export default function QuoteWorkspace() {
 
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, sheet, "Quotation");
-    XLSX.writeFile(workbook, `${meta.quoteNumber || "quotation"}.xlsx`);
+    XLSX.writeFile(workbook, `${meta.quoteNumber.replace(/[^a-zA-Z0-9_-]/g, "_") || "quotation"}.xlsx`);
     setMessage("Quotation Excel generated from approved lines only.");
   }
 
-  function downloadPdf() {
-    if (paymentStatus !== "paid") { setPaymentError("Complete payment before downloading."); return; }
+  async function downloadPdf() {
+    if (!(await verifyExportAccess())) return;
     if (!/^[A-Z]{3}$/.test(meta.currency)) {
       setMessage("Select the catalogue currency before downloading PDF.");
       return;
@@ -523,14 +737,14 @@ export default function QuoteWorkspace() {
     <section id="workspace" className="workspace">
       <div className="workspace-head">
         <div>
-          <div className="eyebrow">MVP-03 · end-to-end quotation workflow</div>
+          <div className="eyebrow">QuoteFlow · quotation workspace</div>
           <h2>RFQ to quotation</h2>
           <p className="muted">RFQ: {sourceName}</p>
           <p className="muted">Catalogue: {catalogueName} · {catalogue.length} items</p>
         </div>
 
         <div className="workspace-actions">
-          <button className="secondary-button" type="button" onClick={resetDemo}>Reset demo</button>
+          <button className="secondary-button" type="button" onClick={resetDemo}>Try demo</button>
           <label className="upload-button secondary-upload">
             Upload catalogue
             <input
@@ -576,12 +790,12 @@ export default function QuoteWorkspace() {
           <tbody>
             {quote.lines.map((row) => (
               <tr key={row.id}>
-                <td>{row.code || "—"}</td>
+                <td><input aria-label="RFQ item code" value={row.code} onChange={(e) => editRfqLine(row.id, { code: e.target.value })} style={{ width: 85 }} /></td>
                 <td>
-                  <strong>{row.description}</strong>
+                  <textarea aria-label="RFQ item description" value={row.description} rows={2} onChange={(e) => editRfqLine(row.id, { description: e.target.value })} style={{ minWidth: 170, width: "100%" }} />
                   {row.matchedDescription && row.matchedDescription !== row.description ? <small>Matched: {row.matchedDescription}</small> : null}
                 </td>
-                <td>{row.quantity} {row.unit}</td>
+                <td><input aria-label="RFQ quantity" type="number" min="1" value={row.quantity} onChange={(e) => editRfqLine(row.id, { quantity: Math.max(1, Number(e.target.value) || 1) })} style={{ width: 65 }} /><input aria-label="RFQ unit" value={row.unit} onChange={(e) => editRfqLine(row.id, { unit: e.target.value })} style={{ width: 65 }} /></td>
                 <td>
                   <span className={"match " + row.matchStatus}>{row.matchStatus}</span>
                   {row.matchedCode ? <small>{row.matchedCode}</small> : null}
@@ -607,12 +821,15 @@ export default function QuoteWorkspace() {
                       </select>
                     </div>
                   ) : manualMatches[row.id] ? <small>Reviewer approved</small> : null}
+                  <button type="button" className="mini-button" onClick={() => removeRfqLine(row.id)}>Remove incorrect line</button>
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+
+      <button type="button" className="mini-button" onClick={addRfqLine}>+ Add missing RFQ item</button>
 
       <div className="summary">
         <div><strong>{quote.lines.length}</strong><span>RFQ lines</span></div>
@@ -629,16 +846,46 @@ export default function QuoteWorkspace() {
 
       <div className="guardrail">
         <strong>QuoteFlow export pricing (USD)</strong>
-        <span>{rfqLines.length} RFQ item(s) · {pricing.label} · {pricing.amount === null ? "Contact us for pricing" : `USD ${pricing.amount.toFixed(2)} per quotation`}. One payment will cover PDF and Excel of the same quotation. Stripe payment is required to unlock exports.</span>
+        <span>{rfqLines.length} RFQ item(s) · {pricing.label} · {pricing.amount === null ? "Contact us for pricing" : `USD ${(testPriceMode ? 1 : pricing.amount).toFixed(2)} per quotation`}. One payment will cover PDF and Excel of the same quotation. Stripe payment is required to unlock exports.</span>
       </div>
 
       <div className="export-row">
         <div>
-          <strong>Stripe checkout · {process.env.NEXT_PUBLIC_QUOTE_TEST_MODE === "true" ? "USD 1.00 TEST" : "USD " + (pricing.amount?.toFixed(2) ?? "custom")}</strong>
+          <strong>Stripe checkout · {testPriceMode ? "USD 1.00 TEST" : "USD " + (pricing.amount?.toFixed(2) ?? "custom")}</strong>
           <span>{paymentStatus === "paid" ? "Payment verified. PDF and Excel unlocked." : paymentStatus === "checking" ? "Verifying payment..." : "Pay to unlock both downloads."}</span>
           {paymentError ? <span role="alert">{paymentError}</span> : null}
+          {paymentStatus === "checking" ? <span role="status">Checking an earlier payment. Checkout is temporarily disabled to avoid duplicate charges.</span> : null}
+          {paymentStatus === "paid" ? <span role="status">This quotation is already paid. Use the download buttons below; no second payment is needed.</span> : null}
+          {pricing.amount === null ? <span role="status">Checkout is unavailable for this RFQ size.</span> : null}
         </div>
-        <button type="button" onClick={startCheckout} disabled={checkoutBusy || paymentStatus !== "unpaid" || pricing.amount === null}>{checkoutBusy ? "Opening Stripe..." : "Pay with Stripe"}</button>
+        {showLiveTestAuthorization ? (
+          <label style={{ display: "block", marginBottom: 12 }}>
+            Restricted Live Test Authorization (not a payment card number)
+            <input type="password" autoComplete="off" value={liveTestToken} onChange={(event) => setLiveTestToken(event.target.value)} placeholder="Enter one-time test authorization" />
+          </label>
+        ) : null}
+        <button type="button" onClick={startCheckout} disabled={checkoutBusy || paymentStatus !== "unpaid" || pricing.amount === null || quote.blockedCount > 0 || quote.reviewCount > 0 || readyLines.length !== rfqLines.length} title={checkoutBusy ? "Opening Stripe Checkout" : paymentStatus === "checking" ? "Verifying a previous payment; please wait" : paymentStatus === "paid" ? "Already paid: download your quotation below" : pricing.amount === null ? "This RFQ needs a custom quotation" : "Open Stripe Checkout"}>{checkoutBusy ? "Opening Stripe..." : paymentStatus === "checking" ? "Verifying payment..." : paymentStatus === "paid" ? "Payment verified" : pricing.amount === null ? "Contact us for pricing" : "Pay with Stripe"}</button>
+      </div>
+      {paymentStatus !== "paid" ? (
+        <div className="guardrail">
+          <strong>Already paid? Restore your download access</strong>
+          <span>Paste the Checkout Session ID from your Stripe dashboard to restore a previous payment. Verification is secure and does not create a new charge.</span>
+          <div className="export-actions">
+            <input aria-label="Stripe Checkout Session ID" type="password" autoComplete="off" placeholder="cs_live_... or cs_test_..." value={recoverySessionId} onChange={(event) => setRecoverySessionId(event.target.value)} />
+            <button type="button" onClick={recoverExistingPayment} disabled={recoveryBusy}>{recoveryBusy ? "Checking..." : "Restore paid download"}</button>
+          </div>
+          {recoveryMessage ? <span role="status" aria-live="polite">{recoveryMessage}</span> : null}
+        </div>
+      ) : null}
+      <div className="export-row">
+        <div>
+          <strong>Try Demo — Free sample downloads</strong>
+          <span>Fixed synthetic example only. Clearly marked DEMO; it does not export your current quotation or bypass Stripe payment.</span>
+        </div>
+        <div className="export-actions">
+          <button type="button" className="secondary-button" onClick={downloadFreeDemoExcel}>Free Demo Excel</button>
+          <button type="button" onClick={downloadFreeDemoPdf}>Free Demo PDF</button>
+        </div>
       </div>
       <div className="export-row">
         <div>
