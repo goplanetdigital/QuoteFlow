@@ -163,6 +163,12 @@ export default function QuoteWorkspace() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const returnedSessionId = params.get("session_id");
+    const emailedRecovery = params.get("recover_session");
+    if (emailedRecovery && /^cs_(?:test|live)_[a-zA-Z0-9]+$/.test(emailedRecovery)) {
+      setRecoverySessionId(emailedRecovery);
+      setRecoveryMessage("Payment link detected. Select Restore to retrieve your quotation.");
+      window.history.replaceState({}, "", window.location.pathname);
+    }
     const stored = localStorage.getItem("quoteflow_paid_receipt");
     const pending = sessionStorage.getItem("quoteflow_pending");
     const saved = returnedSessionId ? pending || stored : stored;
