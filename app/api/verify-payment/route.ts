@@ -24,7 +24,7 @@ export async function POST(request: NextRequest) {
       session.metadata?.fingerprint === fingerprint &&
       Number.isSafeInteger(Number(session.metadata?.itemCount)) &&
       Number(session.metadata.itemCount) >= 1 && Number(session.metadata.itemCount) <= 1000 &&
-      session.amount_total === (isProduction && session.metadata?.liveTest === "true" && process.env.QUOTE_LIVE_TEST_TOKEN ? 100 : isProduction || process.env.QUOTE_STRIPE_TEST_MODE !== "true"
+      session.amount_total === (isProduction && session.metadata?.liveTest === "true" ? 100 : isProduction || process.env.QUOTE_STRIPE_TEST_MODE !== "true"
         ? (session.metadata?.pricingVersion !== "2" && session.metadata?.pricingVersion !== "3"
           ? (Number(session.metadata.itemCount) <= 20 ? 1000 : Number(session.metadata.itemCount) <= 100 ? 2900 : Number(session.metadata.itemCount) <= 300 ? 5900 : 9900)
           : session.metadata?.pricingVersion === "2"
