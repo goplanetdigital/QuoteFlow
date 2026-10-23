@@ -1,3 +1,4 @@
+import { neon } from "@neondatabase/serverless";
 import { createHash, timingSafeEqual } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -67,6 +68,22 @@ export async function POST(request: NextRequest) {
     });
     const result = await response.json();
     if (!response.ok || !result.url) return NextResponse.json({ error: "Stripe checkout could not start." }, { status: 502 });
+    // Persist the exact payload only after Stripe created a valid checkout session.
+    // Do not return a checkout URL if the quote cannot be restored after payment.
+    const databaseUrl = process.env.DATABASE_URL?.trim();
+    if (!databaseUrl) {
+      console.error("QuoteFlow snapshot storage not configured");
+      return NextResponse.json({ error: "Secure quotation storage is temporarily unavailable. No payment was made." }, { status: 503 });
+    }
+    try {
+      const sql = neon(databaseUrl);
+      await sql`INSERT INTO quoteflow_quote_snapshots (fingerprint, payload, expires_at)
+        VALUES (${fingerprint}, ${payload}::jsonb, now() + interval '90 days')
+        ON CONFLICT (fingerprint) DO UPDATE SET expires_at = GREATEST(quoteflow_quote_snapshots.expires_at, now() + interval '90 days')`;
+    } catch (error) {
+      console.error("QuoteFlow snapshot persistence failed", error instanceof Error ? error.message : "unknown");
+      return NextResponse.json({ error: "Secure quotation storage is temporarily unavailable. No payment was made." }, { status: 503 });
+    }
     return NextResponse.json({ url: result.url });
   } catch {
     return NextResponse.json({ error: "Checkout request failed." }, { status: 400 });
