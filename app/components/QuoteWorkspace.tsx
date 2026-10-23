@@ -885,6 +885,13 @@ export default function QuoteWorkspace() {
           {paymentError ? <span role="alert">{paymentError}</span> : null}
           {paymentStatus === "checking" ? <span role="status">Checking an earlier payment. Checkout is temporarily disabled to avoid duplicate charges.</span> : null}
           {paymentStatus === "paid" ? <span role="status">This quotation is already paid. Use the download buttons below; no second payment is needed.</span> : null}
+          {paymentStatus === "paid" ? <button type="button" onClick={() => {
+            setMeta((current) => ({ ...current, quoteNumber: current.quoteNumber + "-NEW-" + Date.now().toString(36) }));
+            setAuthorizedPayload(null);
+            setPaymentStatus("unpaid");
+            setPaymentError("");
+            setRecoveryMessage("New quotation created. Your previous paid receipt remains in this browser. Only proceed to Stripe if you intend a new charge.");
+          }}>Start a new quotation (new payment)</button> : null}
           {pricing.amount === null ? <span role="status">Checkout is unavailable for this RFQ size.</span> : null}
         </div>
         {showLiveTestAuthorization ? (
