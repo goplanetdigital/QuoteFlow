@@ -25,9 +25,11 @@ export async function POST(request: NextRequest) {
       Number.isSafeInteger(Number(session.metadata?.itemCount)) &&
       Number(session.metadata.itemCount) >= 1 && Number(session.metadata.itemCount) <= 1000 &&
       session.amount_total === (isProduction && session.metadata?.liveTest === "true" && process.env.QUOTE_LIVE_TEST_TOKEN ? 100 : isProduction || process.env.QUOTE_STRIPE_TEST_MODE !== "true"
-        ? (session.metadata?.pricingVersion !== "2"
+        ? (session.metadata?.pricingVersion !== "2" && session.metadata?.pricingVersion !== "3"
           ? (Number(session.metadata.itemCount) <= 20 ? 1000 : Number(session.metadata.itemCount) <= 100 ? 2900 : Number(session.metadata.itemCount) <= 300 ? 5900 : 9900)
-          : (Number(session.metadata.itemCount) <= 20 ? 500 : Number(session.metadata.itemCount) <= 100 ? 1500 : Number(session.metadata.itemCount) <= 300 ? 2900 : 4900))
+          : session.metadata?.pricingVersion === "2"
+            ? (Number(session.metadata.itemCount) <= 20 ? 500 : Number(session.metadata.itemCount) <= 100 ? 1500 : Number(session.metadata.itemCount) <= 300 ? 2900 : 4900)
+            : (Number(session.metadata.itemCount) <= 20 ? 800 : Number(session.metadata.itemCount) <= 100 ? 1800 : Number(session.metadata.itemCount) <= 300 ? 3800 : 5900))
         : 100) &&
       session.client_reference_id === fingerprint;
     return NextResponse.json({ paid });
