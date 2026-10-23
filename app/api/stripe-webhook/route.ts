@@ -72,7 +72,7 @@ export async function POST(request: NextRequest) {
     : pricingVersion === "2"
       ? (count <= 20 ? 500 : count <= 100 ? 1500 : count <= 300 ? 2900 : 4900)
       : (count <= 20 ? 1000 : count <= 100 ? 2900 : count <= 300 ? 5900 : 9900);
-  const expectedAmount = isProduction && checkout?.metadata?.liveTest === "true" && process.env.QUOTE_LIVE_TEST_TOKEN
+  const expectedAmount = isProduction && checkout?.metadata?.liveTest === "true"
     ? 100 : !isProduction && process.env.QUOTE_STRIPE_TEST_MODE === "true"
       ? 100 : standardAmount;
   if (!checkout?.id?.startsWith(isProduction ? "cs_live_" : "cs_test_") ||
