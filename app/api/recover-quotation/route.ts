@@ -41,7 +41,7 @@ export async function POST(request: NextRequest) {
     const sql = neon(db);
     const rows = await sql`SELECT payload::text AS payload FROM quoteflow_quote_snapshots
       WHERE fingerprint = ${fingerprint} AND expires_at > now() LIMIT 1`;
-    const payload = rows[0]?.payload;
+    const payload = rows[0]?.payload ? JSON.parse(rows[0].payload) : null;
     if (typeof payload !== "string" || createHash("sha256").update(payload, "utf8").digest("hex") !== fingerprint) {
       return NextResponse.json({ error: "Quotation snapshot unavailable or expired." }, { status: 404 });
     }
