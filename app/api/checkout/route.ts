@@ -21,7 +21,7 @@ export async function POST(request: NextRequest) {
   try {
     const { payload, liveTestToken } = await request.json();
     const configuredToken = process.env.QUOTE_LIVE_TEST_TOKEN?.trim();
-    const liveTest = isProduction && typeof liveTestToken === "string" && !!configuredToken &&
+    const liveTest = isProduction && process.env.QUOTE_LIVE_TEST_ENABLED === "true" && typeof liveTestToken === "string" && !!configuredToken &&
       Buffer.byteLength(liveTestToken) === Buffer.byteLength(configuredToken) &&
       timingSafeEqual(Buffer.from(liveTestToken), Buffer.from(configuredToken));
     if (typeof payload !== "string" || payload.length > 2_000_000 || payload.length < 2) {
