@@ -58,6 +58,8 @@ export async function POST(request: NextRequest) {
     id?: string; mode?: string; currency?: string; amount_total?: number;
     payment_status?: string; payment_intent?: string | null;
     client_reference_id?: string;
+    customer_details?: { email?: string | null } | null;
+    customer_email?: string | null;
     metadata?: { fingerprint?: string; itemCount?: string; liveTest?: string; pricingVersion?: string };
   };
   const checkout = (event as typeof event & { data?: { object?: CheckoutSession }; created?: number }).data?.object;
@@ -139,6 +141,37 @@ export async function POST(request: NextRequest) {
       eventId: event.id, message: error instanceof Error ? error.message : "unknown"
     });
     return NextResponse.json({ error: "Order storage failed" }, { status: 503 });
+  }
+  // A payment receipt is not a file delivery: the quotation currently lives in
+  // the browser, so never claim PDF/Excel attachments or permanent restoration.
+  // Stripe can retry events; Resend's idempotency key prevents duplicate receipts.
+  if (paid && process.env.RESEND_API_KEY?.trim()) {
+    const email = checkout.customer_details?.email ?? checkout.customer_email;
+    if (email && /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email)) {
+      const from = process.env.QUOTE_EMAIL_FROM?.trim() || "QuoteFlow <orders@allsetintl.com>";
+      const siteUrl = process.env.SITE_URL?.trim() || "https://quote-flow-go-planet-digital.vercel.app";
+      try {
+        const resendResponse = await fetch("https://api.resend.com/emails", {
+          method: "POST",
+          headers: {
+            Authorization: "Bearer " + process.env.RESEND_API_KEY.trim(),
+            "Content-Type": "application/json",
+            "Idempotency-Key": "quoteflow-receipt-" + checkout.id
+          },
+          body: JSON.stringify({
+            from, to: [email], subject: "QuoteFlow payment confirmed",
+            text: "Your QuoteFlow payment has been confirmed.\\n\\nReturn to the browser where you created your quotation to download your PDF and Excel files: " + siteUrl + "\\n\\nIf your download is locked, use Already paid? Restore your download access with your Stripe Checkout Session ID: " + checkout.id + "\\n\\nPlease keep your quotation data in that browser. This email is a payment receipt, not a file attachment or permanent file backup.\\n\\nby ALLSET.co"
+          }), cache: "no-store"
+        });
+        if (!resendResponse.ok) {
+          console.error("QuoteFlow receipt email failed", { status: resendResponse.status, eventId: event.id });
+          return NextResponse.json({ error: "Receipt delivery failed" }, { status: 503 });
+        }
+      } catch (error) {
+        console.error("QuoteFlow receipt email unavailable", { eventId: event.id, message: error instanceof Error ? error.message : "unknown" });
+        return NextResponse.json({ error: "Receipt delivery unavailable" }, { status: 503 });
+      }
+    }
   }
   return NextResponse.json({ received: true }, { headers: { "Cache-Control": "no-store" } });
 }
