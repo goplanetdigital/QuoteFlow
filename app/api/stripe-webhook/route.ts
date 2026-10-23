@@ -147,7 +147,7 @@ export async function POST(request: NextRequest) {
   // Stripe can retry events; Resend's idempotency key prevents duplicate receipts.
   if (paid && process.env.RESEND_API_KEY?.trim()) {
     const email = checkout.customer_details?.email ?? checkout.customer_email;
-    if (email && /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email)) {
+    if (email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       const from = process.env.QUOTE_EMAIL_FROM?.trim() || "QuoteFlow <orders@allsetintl.com>";
       const siteUrl = process.env.SITE_URL?.trim() || "https://quote-flow-go-planet-digital.vercel.app";
       try {
