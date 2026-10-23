@@ -40,7 +40,11 @@ export async function POST(request: NextRequest) {
     if (site.protocol !== "https:" && !(site.protocol === "http:" && site.hostname === "localhost" && !isProduction)) {
       return NextResponse.json({ error: "Invalid SITE_URL configuration." }, { status: 503 });
     }
-    const origin = site.origin;
+    // Return to the exact host that initiated Checkout so sessionStorage survives.
+    const requestOrigin = request.nextUrl.origin;
+    const requestHost = new URL(requestOrigin);
+    const allowedHosts = new Set([site.hostname, "quote-flow-go-planet-digital.vercel.app", "quote-flow-blond.vercel.app"]);
+    const origin = requestHost.protocol === "https:" && allowedHosts.has(requestHost.hostname) ? requestOrigin : site.origin;
     const params = new URLSearchParams({
       mode: "payment",
       "line_items[0][price_data][currency]": "usd",
