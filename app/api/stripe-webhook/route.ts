@@ -58,15 +58,23 @@ export async function POST(request: NextRequest) {
     id?: string; mode?: string; currency?: string; amount_total?: number;
     payment_status?: string; payment_intent?: string | null;
     client_reference_id?: string;
-    metadata?: { fingerprint?: string; itemCount?: string; liveTest?: string };
+    metadata?: { fingerprint?: string; itemCount?: string; liveTest?: string; pricingVersion?: string };
   };
   const checkout = (event as typeof event & { data?: { object?: CheckoutSession }; created?: number }).data?.object;
   const fingerprint = checkout?.metadata?.fingerprint;
   const count = Number(checkout?.metadata?.itemCount);
   const isProduction = process.env.VERCEL_ENV === "production";
+  // Keep webhook amount validation aligned with Checkout and payment verification.
+  // Historical sessions can use legacy pricing; never accept an arbitrary amount.
+  const pricingVersion = checkout?.metadata?.pricingVersion;
+  const standardAmount = pricingVersion === "3"
+    ? (count <= 20 ? 800 : count <= 100 ? 1800 : count <= 300 ? 3800 : 5900)
+    : pricingVersion === "2"
+      ? (count <= 20 ? 500 : count <= 100 ? 1500 : count <= 300 ? 2900 : 4900)
+      : (count <= 20 ? 1000 : count <= 100 ? 2900 : count <= 300 ? 5900 : 9900);
   const expectedAmount = isProduction && checkout?.metadata?.liveTest === "true" && process.env.QUOTE_LIVE_TEST_TOKEN
     ? 100 : !isProduction && process.env.QUOTE_STRIPE_TEST_MODE === "true"
-    ? 100 : count <= 20 ? 1000 : count <= 100 ? 2900 : count <= 300 ? 5900 : 9900;
+      ? 100 : standardAmount;
   if (!checkout?.id?.startsWith(isProduction ? "cs_live_" : "cs_test_") ||
       checkout.mode !== "payment" || checkout.currency !== "usd" ||
       typeof fingerprint !== "string" || !/^[a-f0-9]{64}$/.test(fingerprint) ||
