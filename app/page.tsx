@@ -12,7 +12,7 @@ export default function Home() {
           quotation exports with one payment.
         </p>
         <p style={{ fontSize: 16, marginTop: 16 }}>
-          From US$5 per quotation · No subscription required · Review before you pay
+          From US$8 per quotation · No subscription required · Review before you pay
         </p>
         <a className="compact-link primary" href="#workspace" style={{ marginTop: 18 }}>
           Create your quotation ↓
