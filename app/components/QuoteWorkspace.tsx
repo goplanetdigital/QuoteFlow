@@ -880,7 +880,7 @@ export default function QuoteWorkspace() {
 
       <div className="export-row">
         <div>
-          <strong>Stripe checkout · {testPriceMode ? "USD 1.00 TEST" : "USD " + (pricing.amount?.toFixed(2) ?? "custom")}</strong>
+          <strong>{paymentStatus === "paid" ? "Payment verified · exports unlocked" : `Stripe checkout · ${testPriceMode ? "USD 1.00 TEST" : "USD " + (pricing.amount?.toFixed(2) ?? "custom")}`}</strong>
           <span>{paymentStatus === "paid" ? "Payment verified. PDF and Excel unlocked." : paymentStatus === "checking" ? "Verifying payment..." : "Pay to unlock both downloads."}</span>
           {paymentError ? <span role="alert">{paymentError}</span> : null}
           {paymentStatus === "checking" ? <span role="status">Checking an earlier payment. Checkout is temporarily disabled to avoid duplicate charges.</span> : null}
