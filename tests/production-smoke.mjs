@@ -23,3 +23,21 @@ console.log('PASS invalid payment rejected; paid=false');
 const webhook = await request('/api/stripe-webhook', { method:'POST', headers:{'Content-Type':'application/json'}, body:'{}' });
 assert.ok([400,503].includes(webhook.status), 'unsigned webhook must be rejected');
 console.log('PASS unsigned webhook rejected');
+
+const readiness = await request('/api/readiness');
+const health = await readiness.json();
+assert.equal(readiness.status, 200, 'production readiness must return HTTP 200');
+assert.equal(health.ready, true, 'production readiness must be true');
+assert.equal(health.environment, 'production', 'must verify production environment');
+for (const name of ['stripeKey', 'stripeWebhook', 'databaseConfigured', 'databaseReachable', 'orderTablesReady']) {
+  assert.equal(health.checks?.[name], true, 'production readiness check failed: ' + name);
+}
+console.log('PASS production Stripe configuration and live Neon connectivity/order tables');
+
+const recovery = await request('/api/recover-quotation', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ sessionId: 'invalid' })
+});
+assert.equal(recovery.status, 400, 'invalid recovery token must be rejected');
+console.log('PASS invalid quotation recovery token rejected');
