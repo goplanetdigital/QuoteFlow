@@ -41,3 +41,18 @@ const recovery = await request('/api/recover-quotation', {
 });
 assert.equal(recovery.status, 400, 'invalid recovery token must be rejected');
 console.log('PASS invalid quotation recovery token rejected');
+
+const homepage = await request('/');
+assert.equal(homepage.status, 200, 'production homepage should be publicly reachable');
+const html = await homepage.text();
+assert.match(html, /QuoteFlow/i, 'production homepage should identify QuoteFlow');
+console.log('PASS branded QuoteFlow homepage reachable');
+
+const brandUrl = new URL(base);
+if (brandUrl.hostname === 'quoteflow.allsetintl.com') {
+  const parent = await fetch('https://allsetintl.com/', { redirect: 'manual', signal: AbortSignal.timeout(15000) });
+  assert.equal(parent.status, 200, 'ALLSET parent website must be available');
+  const parentHtml = await parent.text();
+  assert.match(parentHtml, /href=["']https:\/\/quoteflow\.allsetintl\.com["']/, 'ALLSET product link must use the branded QuoteFlow domain');
+  console.log('PASS ALLSET parent homepage links to branded QuoteFlow domain');
+}
