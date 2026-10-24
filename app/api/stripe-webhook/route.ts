@@ -149,7 +149,7 @@ export async function POST(request: NextRequest) {
     const email = checkout.customer_details?.email ?? checkout.customer_email;
     if (email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       const from = process.env.QUOTE_EMAIL_FROM?.trim() || "QuoteFlow <orders@allsetintl.com>";
-      const siteUrl = process.env.SITE_URL?.trim() || "https://quote-flow-go-planet-digital.vercel.app";
+      const siteUrl = "https://quote-flow-go-planet-digital.vercel.app";
       const recoveryUrl = new URL(siteUrl);
       recoveryUrl.searchParams.set("recover_session", checkout.id);
       try {
@@ -162,7 +162,7 @@ export async function POST(request: NextRequest) {
           },
           body: JSON.stringify({
             from, to: [email], subject: "QuoteFlow payment confirmed",
-            text: "Your QuoteFlow payment has been confirmed.\\n\\nOpen your quotation recovery page: " + recoveryUrl.toString() + "\\n\\nIf your quotation was created before secure snapshot storage was introduced, return to the original browser to download PDF and Excel.\\n\\nThis email contains a recovery link, not file attachments.\\n\\nby ALLSET.co"
+            text: "Your QuoteFlow payment has been confirmed.\n\nOpen your quotation recovery page: " + recoveryUrl.toString() + "\n\nIf your quotation was created before secure snapshot storage was introduced, return to the original browser to download PDF and Excel.\n\nThis email contains a recovery link, not file attachments.\n\nby ALLSET.co"
           }), cache: "no-store"
         });
         if (!resendResponse.ok) {
