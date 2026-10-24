@@ -30,3 +30,10 @@ test('production live test payments remain explicitly flagged', () => {
   assert.match(checkout, /metadata\[liveTest\]/);
   assert.match(webhook, /metadata\?\.liveTest === "true"/);
 });
+
+test('branded domain survives Stripe checkout and recovery emails use branded URL', () => {
+  assert.match(checkout, /allowedHosts = new Set\(\[site\.hostname, "quoteflow\.allsetintl\.com"\]\)/);
+  assert.match(checkout, /success_url: origin \+ "\/\?session_id=\{CHECKOUT_SESSION_ID\}"/);
+  assert.match(webhook, /const siteUrl = "https:\/\/quoteflow\.allsetintl\.com"/);
+  assert.match(webhook, /recoveryUrl\.searchParams\.set\("recover_session", checkout\.id\)/);
+});
