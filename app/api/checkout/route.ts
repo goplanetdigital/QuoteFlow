@@ -46,7 +46,7 @@ export async function POST(request: NextRequest) {
     // Return to the exact host that initiated Checkout so sessionStorage survives.
     const requestOrigin = request.nextUrl.origin;
     const requestHost = new URL(requestOrigin);
-    const allowedHosts = new Set([site.hostname]);
+    const allowedHosts = new Set([site.hostname, "quoteflow.allsetintl.com"]);
     const origin = requestHost.protocol === "https:" && allowedHosts.has(requestHost.hostname) ? requestOrigin : site.origin;
     const params = new URLSearchParams({
       mode: "payment",
