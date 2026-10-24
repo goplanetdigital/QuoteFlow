@@ -18,6 +18,10 @@ jobs:
           node-version: '22'
       - name: Run pricing and payment regression checks
         run: node --test tests/*.test.mjs
+      - name: Production API smoke check (read-only and invalid payment only)
+        env:
+          QUOTEFLOW_BASE_URL: https://quote-flow-go-planet-digital.vercel.app
+        run: node tests/production-smoke.mjs
       - name: Install dependencies
         run: npm install --no-audit --no-fund
       - name: Production build check
