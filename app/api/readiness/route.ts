@@ -13,7 +13,8 @@ export async function GET() {
     stripeWebhook: webhook.startsWith("whsec_"),
     databaseConfigured: /^postgres(ql)?:\/\//.test(databaseUrl),
     databaseReachable: false,
-    orderTablesReady: false
+    orderTablesReady: false,
+    quoteSnapshotsReady: false
   };
 
   if (checks.databaseConfigured) {
@@ -22,9 +23,11 @@ export async function GET() {
       const sql = neon(databaseUrl);
       const rows = await sql`SELECT
         to_regclass('public.quoteflow_orders') IS NOT NULL AS orders_ready,
-        to_regclass('public.quoteflow_processed_events') IS NOT NULL AS events_ready`;
+        to_regclass('public.quoteflow_processed_events') IS NOT NULL AS events_ready,
+        to_regclass('public.quoteflow_quote_snapshots') IS NOT NULL AS snapshots_ready`;
       checks.databaseReachable = rows.length === 1;
       checks.orderTablesReady = rows[0]?.orders_ready === true && rows[0]?.events_ready === true;
+      checks.quoteSnapshotsReady = rows[0]?.snapshots_ready === true;
     } catch (error) {
       console.error("QuoteFlow readiness database check failed", {
         message: error instanceof Error ? error.message : "unknown"
