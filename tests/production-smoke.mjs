@@ -29,7 +29,7 @@ const health = await readiness.json();
 assert.equal(readiness.status, 200, 'production readiness must return HTTP 200');
 assert.equal(health.ready, true, 'production readiness must be true');
 assert.equal(health.environment, 'production', 'must verify production environment');
-for (const name of ['stripeKey', 'stripeWebhook', 'databaseConfigured', 'databaseReachable', 'orderTablesReady']) {
+for (const name of ['stripeKey', 'stripeWebhook', 'databaseConfigured', 'databaseReachable', 'orderTablesReady', 'quoteSnapshotsReady']) {
   assert.equal(health.checks?.[name], true, 'production readiness check failed: ' + name);
 }
 console.log('PASS production Stripe configuration and live Neon connectivity/order tables');
