@@ -149,7 +149,7 @@ export async function POST(request: NextRequest) {
     const email = checkout.customer_details?.email ?? checkout.customer_email;
     if (email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       const from = process.env.QUOTE_EMAIL_FROM?.trim() || "QuoteFlow <orders@allsetintl.com>";
-      const siteUrl = "https://quote-flow-go-planet-digital.vercel.app";
+      const siteUrl = "https://quoteflow.allsetintl.com";
       const recoveryUrl = new URL(siteUrl);
       recoveryUrl.searchParams.set("recover_session", checkout.id);
       try {
