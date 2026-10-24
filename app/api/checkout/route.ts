@@ -20,7 +20,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: isProduction ? "Stripe Live checkout is unavailable. The deployed server does not have a valid live Stripe API key. Please contact support; no payment was made." : "Stripe Test checkout is unavailable. Check the environment key.", code: "STRIPE_KEY_CONFIGURATION", reason }, { status: 503 });
   }
   try {
-    const { payload, liveTestToken } = await request.json();
+    const { payload, liveTestToken, growthCampaign } = await request.json();
+    // Optional non-identifying campaign tag. Never treat this as proof of a paid referral.
+    const campaign = typeof growthCampaign === 'string' && /^[a-z0-9_-]{1,48}$/.test(growthCampaign) ? growthCampaign : null;
     const configuredToken = process.env.QUOTE_LIVE_TEST_TOKEN?.trim();
     const liveTest = isProduction && process.env.QUOTE_LIVE_TEST_ENABLED === "true" && typeof liveTestToken === "string" && !!configuredToken &&
       Buffer.byteLength(liveTestToken) === Buffer.byteLength(configuredToken) &&
@@ -56,6 +58,7 @@ export async function POST(request: NextRequest) {
       "metadata[fingerprint]": fingerprint,
       "metadata[itemCount]": String(count),
       "metadata[pricingVersion]": "3",
+      ...(campaign ? { "metadata[growthCampaign]": campaign } : {}),
       "metadata[liveTest]": liveTest ? "true" : "false",
       success_url: origin + "/?session_id={CHECKOUT_SESSION_ID}",
       cancel_url: origin + "/?checkout=cancelled"
