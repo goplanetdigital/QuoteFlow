@@ -15,13 +15,13 @@ assert.equal(json.testPriceMode, false, 'production test pricing must be disable
 console.log('PASS production checkout-config; testPriceMode=false');
 
 const verify = await request('/api/verify-payment', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({sessionId:'invalid',fingerprint:'invalid'}) });
-assert.ok([400,503].includes(verify.status), 'invalid session must be rejected');
+assert.equal(verify.status, 400, 'invalid session must be rejected by a configured payment verifier');
 const body = await verify.json();
 assert.equal(body.paid, false, 'invalid payment cannot unlock files');
 console.log('PASS invalid payment rejected; paid=false');
 
 const webhook = await request('/api/stripe-webhook', { method:'POST', headers:{'Content-Type':'application/json'}, body:'{}' });
-assert.ok([400,503].includes(webhook.status), 'unsigned webhook must be rejected');
+assert.equal(webhook.status, 400, 'unsigned webhook must be rejected by a configured webhook endpoint');
 console.log('PASS unsigned webhook rejected');
 
 const readiness = await request('/api/readiness');
