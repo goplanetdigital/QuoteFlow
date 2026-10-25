@@ -144,6 +144,10 @@ export async function POST(request: NextRequest) {
   }
   // A secure recovery link gives the customer access to verified PDF/Excel downloads.
   // Stripe can retry events; Resend's idempotency key prevents duplicate receipts.
+  if (paid && !process.env.RESEND_API_KEY?.trim()) {
+    console.error("QuoteFlow delivery: email provider unavailable", { eventId: event.id });
+    return NextResponse.json({ error: "Email delivery unavailable" }, { status: 503 });
+  }
   if (paid && process.env.RESEND_API_KEY?.trim()) {
     const email = checkout.customer_details?.email ?? checkout.customer_email;
     if (email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
