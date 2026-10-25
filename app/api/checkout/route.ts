@@ -77,7 +77,7 @@ export async function POST(request: NextRequest) {
     if (!amount) {
       return NextResponse.json({ error: "Invalid quotation." }, { status: 400 });
     }
-    const siteUrl = isProduction ? "https://quote-flow-blond.vercel.app" : request.nextUrl.origin;
+    const siteUrl = isProduction ? "https://quoteflow.allsetintl.com" : request.nextUrl.origin;
     if (!siteUrl) return NextResponse.json({ error: "SITE_URL is not configured." }, { status: 503 });
     const site = new URL(siteUrl);
     if (site.protocol !== "https:" && !(site.protocol === "http:" && site.hostname === "localhost" && !isProduction)) {
@@ -86,7 +86,7 @@ export async function POST(request: NextRequest) {
     // Return to the exact host that initiated Checkout so sessionStorage survives.
     const requestOrigin = request.nextUrl.origin;
     const requestHost = new URL(requestOrigin);
-    const allowedHosts = new Set([site.hostname, "quote-flow-go-planet-digital.vercel.app", "quoteflow.allsetintl.com"]);
+    const allowedHosts = new Set([site.hostname, "quoteflow.allsetintl.com"]);
     const origin = requestHost.protocol === "https:" && allowedHosts.has(requestHost.hostname) ? requestOrigin : site.origin;
     const params = new URLSearchParams({
       mode: "payment",
