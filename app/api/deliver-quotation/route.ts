@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { neon } from "@neondatabase/serverless";
 import { NextRequest, NextResponse } from "next/server";
 import { buildQuote, type CatalogueItem, type RfqLine } from "../../../lib/quoteflow";
@@ -40,7 +40,7 @@ function safeCell(value: unknown) {
 }
 export async function POST(request: NextRequest) {
   try {
-    const { sessionId, format } = await request.json();
+    const { sessionId, format, token, issueToken } = await request.json();
     const production = process.env.VERCEL_ENV === "production";
     if (!["pdf", "xlsx"].includes(format) || typeof sessionId !== "string" ||
         !/^cs_(?:live|test)_[A-Za-z0-9]+$/.test(sessionId) ||
@@ -71,6 +71,23 @@ export async function POST(request: NextRequest) {
         typeof fingerprint !== "string" || !/^[a-f0-9]{64}$/.test(fingerprint) ||
         session.client_reference_id !== fingerprint) {
       return NextResponse.json({ error: "Payment not eligible" }, { status: 403, headers: noStore });
+    }
+    // Issue a 10-minute signed capability only after the same Stripe payment checks.
+    // No new secret: derive the MAC key from the existing webhook signing secret.
+    const signingSecret = process.env.STRIPE_WEBHOOK_SECRET?.trim();
+    if (!signingSecret) return NextResponse.json({ error: "Secure download unavailable" }, { status: 503, headers: noStore });
+    const sign = (expires: number) => createHmac("sha256", signingSecret)
+      .update("quoteflow-download-v1:" + sessionId + ":" + fingerprint + ":" + expires).digest("hex");
+    if (issueToken === true) {
+      const expires = Date.now() + 10 * 60 * 1000;
+      return NextResponse.json({ token: expires + "." + sign(expires), expires }, { headers: noStore });
+    }
+    const parts = typeof token === "string" ? token.split(".") : [];
+    const expires = Number(parts[0]);
+    if (parts.length !== 2 || !Number.isSafeInteger(expires) || expires <= Date.now() ||
+        expires > Date.now() + 10 * 60 * 1000 || !/^[a-f0-9]{64}$/.test(parts[1] || "") ||
+        !timingSafeEqual(Buffer.from(parts[1], "hex"), Buffer.from(sign(expires), "hex"))) {
+      return NextResponse.json({ error: "Download link expired or unauthorized" }, { status: 403, headers: noStore });
     }
     const sql = neon(db);
     const rows = await sql`SELECT payload::text AS payload FROM quoteflow_quote_snapshots
