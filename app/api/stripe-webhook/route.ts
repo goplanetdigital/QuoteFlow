@@ -142,46 +142,16 @@ export async function POST(request: NextRequest) {
     });
     return NextResponse.json({ error: "Order storage failed" }, { status: 503 });
   }
-  // A secure recovery link gives the customer access to verified PDF/Excel downloads.
-  // Stripe can retry events; Resend's idempotency key prevents duplicate receipts.
-  if (paid && !process.env.RESEND_API_KEY?.trim()) {
-    console.error("QuoteFlow delivery: email provider unavailable", { eventId: event.id });
-    return NextResponse.json({ error: "Email delivery unavailable" }, { status: 503 });
-  }
-  if (paid && process.env.RESEND_API_KEY?.trim()) {
-    const email = checkout.customer_details?.email ?? checkout.customer_email;
-    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      console.error("QuoteFlow delivery: paid order has no valid recipient", { eventId: event.id });
-      return NextResponse.json({ error: "Recipient email unavailable" }, { status: 503 });
-    }
-    if (email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      const from = process.env.QUOTE_EMAIL_FROM?.trim() || "QuoteFlow <orders@allsetintl.com>";
-      const siteUrl = "https://quoteflow.allsetintl.com";
-      const recoveryUrl = new URL(siteUrl);
-      // Keep the bearer recovery session out of HTTP request URLs and access logs.
-      recoveryUrl.hash = new URLSearchParams({ recover_session: checkout.id }).toString();
-      try {
-        const resendResponse = await fetch("https://api.resend.com/emails", {
-          method: "POST",
-          headers: {
-            Authorization: "Bearer " + process.env.RESEND_API_KEY.trim(),
-            "Content-Type": "application/json",
-            "Idempotency-Key": "quoteflow-receipt-" + checkout.id
-          },
-          body: JSON.stringify({
-            from, to: [email], subject: "QuoteFlow payment confirmed",
-            text: "Your QuoteFlow payment has been confirmed.\n\nOpen your secure quotation download page: " + recoveryUrl.toString() + "\n\nAfter your payment is verified, use Download PDF or Download Excel. Your link is a private bearer credential; do not forward it. Saved quotation snapshots expire after 90 days.\n\nIf your quotation predates secure snapshot storage, contact support rather than paying again. This email contains a secure download entry, not file attachments.\n\nby ALLSET.co"
-          }), cache: "no-store"
-        });
-        if (!resendResponse.ok) {
-          console.error("QuoteFlow receipt email failed", { status: resendResponse.status, eventId: event.id });
-          return NextResponse.json({ error: "Receipt delivery failed" }, { status: 503 });
-        }
-      } catch (error) {
-        console.error("QuoteFlow receipt email unavailable", { eventId: event.id, message: error instanceof Error ? error.message : "unknown" });
-        return NextResponse.json({ error: "Receipt delivery unavailable" }, { status: 503 });
-      }
-    }
+  // The outbox is intentionally disabled until a reviewed migration, dedicated
+  // dispatcher, provider reconciliation and isolated E2E have passed.
+  // Do not send directly from a Stripe webhook: retries can outlive provider
+  // idempotency retention, and a 2xx response does not prove Gmail delivery.
+  if (paid) {
+    console.error("QuoteFlow paid fulfillment awaiting verified outbox", { eventId: event.id });
+    return NextResponse.json(
+      { error: "Automated delivery not enabled" },
+      { status: 503, headers: { "Cache-Control": "no-store" } }
+    );
   }
   return NextResponse.json({ received: true }, { headers: { "Cache-Control": "no-store" } });
 }
