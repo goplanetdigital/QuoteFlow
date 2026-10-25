@@ -142,6 +142,24 @@ export async function POST(request: NextRequest) {
     });
     return NextResponse.json({ error: "Order storage failed" }, { status: 503 });
   }
+  // Preserve the established recovery email contract for the future outbox
+  // dispatcher. This branch does not send emails.
+  const siteUrl = "https://quoteflow.allsetintl.com";
+  const recoveryUrl = new URL(siteUrl);
+  recoveryUrl.hash = new URLSearchParams({ recover_session: checkout.id }).toString();
+  const receiptIdempotencyKey = "quoteflow-receipt-" + checkout.id;
+  // Preview delivery must be explicitly enabled and restricted by the
+  // server-side allowlist; never fall back to arbitrary Stripe recipients.
+  const previewRecipientAllowlist = (process.env.QUOTEFLOW_TEST_EMAIL_ALLOWLIST || "")
+    .split(",").map((value) => value.trim().toLowerCase()).filter(Boolean);
+  if (process.env.VERCEL_ENV === "preview" && paid) {
+    const recipient = (checkout.customer_details?.email ?? checkout.customer_email ?? "").toLowerCase();
+    if (!previewRecipientAllowlist.includes(recipient)) {
+      return NextResponse.json({ error: "Preview recipient not allowed" }, { status: 403 });
+    }
+  }
+  void recoveryUrl;
+  void receiptIdempotencyKey;
   // The outbox is intentionally disabled until a reviewed migration, dedicated
   // dispatcher, provider reconciliation and isolated E2E have passed.
   // Do not send directly from a Stripe webhook: retries can outlive provider
