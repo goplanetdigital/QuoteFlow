@@ -1,20 +1,20 @@
-import { neon } from "@neondatabase/serverless";
+import { verifiedDatabase } from "./verified-database";
 
 /**
  * Preview-only outbox primitives. No email is sent by this module.
  * DATABASE_URL must point to the dedicated isolated Neon branch.
  */
-export function isolatedOutbox() {
+export async function isolatedOutbox() {
   if (process.env.VERCEL_ENV !== "preview" ||
       process.env.QUOTEFLOW_ISOLATED_OUTBOX_ENABLED !== "true" ||
       !process.env.DATABASE_URL) {
     throw new Error("Isolated outbox disabled");
   }
-  return neon(process.env.DATABASE_URL);
+  return verifiedDatabase(process.env.DATABASE_URL);
 }
 
 export async function claimDelivery(id: number) {
-  const sql = isolatedOutbox();
+  const sql = await isolatedOutbox();
   const rows = await sql`
     UPDATE quoteflow_email_deliveries
     SET status = 'SENDING', attempts = attempts + 1,
@@ -33,7 +33,7 @@ export async function claimDelivery(id: number) {
 }
 
 export async function markSent(id: number, idempotencyKey: string, messageId: string) {
-  const sql = isolatedOutbox();
+  const sql = await isolatedOutbox();
   return sql`
     UPDATE quoteflow_email_deliveries
     SET status = 'SENT', provider_message_id = ${messageId},
@@ -45,7 +45,7 @@ export async function markSent(id: number, idempotencyKey: string, messageId: st
 }
 
 export async function markFailed(id: number, idempotencyKey: string, reason: string) {
-  const sql = isolatedOutbox();
+  const sql = await isolatedOutbox();
   return sql`
     UPDATE quoteflow_email_deliveries
     SET status = 'FAILED', lease_until = NULL,
@@ -60,7 +60,7 @@ export async function markFailed(id: number, idempotencyKey: string, reason: str
 }
 
 export async function quarantineExpiredLeases() {
-  const sql = isolatedOutbox();
+  const sql = await isolatedOutbox();
   return sql`
     UPDATE quoteflow_email_deliveries
     SET status = 'FAILED', lease_until = NULL, next_retry_at = NULL,

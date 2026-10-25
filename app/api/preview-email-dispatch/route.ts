@@ -31,7 +31,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({error:"Invalid id"},{status:400});
   try {
     await quarantineExpiredLeases();
-    const sql = isolatedOutbox();
+    const sql = await isolatedOutbox();
     const rows = await sql`SELECT id, recipient_email, status, email_kind FROM quoteflow_email_deliveries WHERE id = ${payload.id}`;
     const record = rows[0];
     if (!record) return NextResponse.json({error:"Not found"},{status:404});

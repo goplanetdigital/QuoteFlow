@@ -1,4 +1,4 @@
-import { neon } from "@neondatabase/serverless";
+import { verifiedDatabase } from "../../../lib/verified-database";
 import { createHash, timingSafeEqual } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { buildQuote, type RfqLine, type CatalogueItem } from "../../../lib/quoteflow";
@@ -115,7 +115,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Secure quotation storage is temporarily unavailable. No payment was made." }, { status: 503 });
     }
     try {
-      const sql = neon(databaseUrl);
+      const sql = await verifiedDatabase(databaseUrl);
       await sql`INSERT INTO quoteflow_quote_snapshots (fingerprint, payload, expires_at)
         VALUES (${fingerprint}, ${JSON.stringify(payload)}::jsonb, now() + interval '90 days')
         ON CONFLICT (fingerprint) DO UPDATE SET payload = EXCLUDED.payload, expires_at = GREATEST(quoteflow_quote_snapshots.expires_at, now() + interval '90 days')`;

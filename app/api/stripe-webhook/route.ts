@@ -1,3 +1,4 @@
+import { verifiedDatabase } from "../../../lib/verified-database";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -93,8 +94,7 @@ export async function POST(request: NextRequest) {
   if (!paid && !failed) return NextResponse.json({ received: true });
 
   try {
-    const { neon } = await import("@neondatabase/serverless");
-    const sql = neon(databaseUrl);
+    const sql = await verifiedDatabase(databaseUrl);
     // A single SQL statement makes event deduplication and order upsert atomic.
     // Paid is terminal here: a late failure event cannot undo a confirmed payment.
     await sql`
