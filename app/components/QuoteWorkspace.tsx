@@ -175,6 +175,11 @@ export default function QuoteWorkspace() {
     const stored = localStorage.getItem("quoteflow_paid_receipt");
     const pending = sessionStorage.getItem("quoteflow_pending");
     const saved = returnedSessionId ? pending || stored : stored;
+    // Email recovery links must restore the referenced payment, not an unrelated
+    // quotation left in localStorage by an earlier purchase.
+    const autoRecoveryId = emailedRecovery && /^cs_(?:test|live)_[a-zA-Z0-9]+$/.test(emailedRecovery)
+      ? emailedRecovery : returnedSessionId && /^cs_(?:test|live)_[a-zA-Z0-9]+$/.test(returnedSessionId)
+      ? returnedSessionId : null;
     // A successful Stripe redirect may land in a new browser context without sessionStorage.
     // Offer secure server-side recovery instead of silently losing the paid quotation.
     if (returnedSessionId && /^cs_(?:test|live)_[a-zA-Z0-9]+$/.test(returnedSessionId)) {
@@ -182,16 +187,16 @@ export default function QuoteWorkspace() {
       setRecoveryMessage("Stripe payment returned. If your quotation does not unlock automatically, select Restore paid download. No new charge is needed.");
       window.history.replaceState({}, "", window.location.pathname);
     }
-    if (!saved) {
+    if (!saved || emailedRecovery) {
       // A Stripe redirect can open a new tab or browser without sessionStorage.
       // Recover the server-persisted quotation automatically, without a second payment.
-      if (returnedSessionId && /^cs_(?:test|live)_[a-zA-Z0-9]+$/.test(returnedSessionId)) {
+      if (autoRecoveryId) {
         setRecoveryBusy(true);
         setPaymentStatus("checking");
         fetch("/api/recover-quotation", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ sessionId: returnedSessionId }),
+          body: JSON.stringify({ sessionId: autoRecoveryId }),
           cache: "no-store"
         }).then(async (response) => {
           if (!response.ok) throw new Error("Automatic recovery unavailable");
@@ -209,7 +214,7 @@ export default function QuoteWorkspace() {
           setSourceName(snapshot.sourceName || "");
           setAuthorizedPayload(result.payload);
           setPaymentStatus("paid");
-          localStorage.setItem("quoteflow_paid_receipt", JSON.stringify({ sessionId: returnedSessionId, payload: result.payload }));
+          localStorage.setItem("quoteflow_paid_receipt", JSON.stringify({ sessionId: autoRecoveryId, payload: result.payload }));
           setRecoverySessionId("");
           setRecoveryMessage("Payment verified. Your PDF and Excel downloads are unlocked.");
           setPaymentError("");
@@ -225,7 +230,12 @@ export default function QuoteWorkspace() {
       const receipt = JSON.parse(saved) as { payload?: string; sessionId?: string };
       const sessionId = returnedSessionId || receipt.sessionId;
       const payload = receipt.payload;
-      if (!sessionId || !payload || (returnedSessionId && receipt.sessionId && receipt.sessionId !== returnedSessionId)) return;
+      if (!sessionId || !payload || (returnedSessionId && receipt.sessionId && receipt.sessionId !== returnedSessionId)) {
+        if (autoRecoveryId) {
+          setRecoveryMessage("Previous browser receipt does not match this payment. Select Restore paid download; do not pay again.");
+        }
+        return;
+      }
       const snapshot = JSON.parse(payload);
       if (!Array.isArray(snapshot.rfqLines) || !Array.isArray(snapshot.catalogue) || !snapshot.meta) return;
       setPaymentStatus("checking");
