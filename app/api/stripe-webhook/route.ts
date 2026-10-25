@@ -151,7 +151,8 @@ export async function POST(request: NextRequest) {
       const from = process.env.QUOTE_EMAIL_FROM?.trim() || "QuoteFlow <orders@allsetintl.com>";
       const siteUrl = "https://quoteflow.allsetintl.com";
       const recoveryUrl = new URL(siteUrl);
-      recoveryUrl.searchParams.set("recover_session", checkout.id);
+      // Keep the bearer recovery session out of HTTP request URLs and access logs.
+      recoveryUrl.hash = new URLSearchParams({ recover_session: checkout.id }).toString();
       try {
         const resendResponse = await fetch("https://api.resend.com/emails", {
           method: "POST",
