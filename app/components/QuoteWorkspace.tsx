@@ -617,7 +617,7 @@ export default function QuoteWorkspace() {
 
     // The built-in PDF writer uses Helvetica/ASCII and cannot safely encode Unicode.
     // Refuse a corrupted PDF instead of silently replacing customer characters with '?'.
-    const pdfTextFields = [meta.quoteNumber, meta.notes, meta.currency,
+    const pdfTextFields = [meta.quoteNumber, meta.notes, meta.currency, meta.supplierName, meta.customerName, meta.validDays, sourceName,
       ...readyLines.flatMap((line) => [line.code, line.description, line.matchedCode, line.matchedDescription, line.unit])];
     if (pdfTextFields.some((value) => /[^\x20-\x7E]/.test(String(value ?? "")))) {
       setMessage("PDF export currently supports English/ASCII text only. Your quotation contains non-English characters that would be lost. Please download Excel to preserve the original text; PDF export is blocked until Unicode fonts are supported.");
