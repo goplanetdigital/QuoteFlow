@@ -306,6 +306,13 @@ export default function QuoteWorkspace() {
       setPaymentError("All RFQ items must have approved catalogue prices and a valid currency before checkout.");
       return;
     }
+    // The current PDF renderer is ASCII-only. Never charge for a PDF that would lose text.
+    const pdfFields = [meta.quoteNumber, meta.notes, meta.currency, meta.supplierName, meta.customerName, meta.validDays, sourceName,
+      ...readyLines.flatMap((line) => [line.code, line.description, line.matchedCode, line.matchedDescription, line.unit])];
+    if (pdfFields.some((value) => /[^\x20-\x7E]/.test(String(value ?? "")))) {
+      setPaymentError("Checkout is paused: this quotation contains non-English characters that the PDF cannot preserve yet. No payment was taken. Please use English/ASCII text or wait for Unicode PDF support.");
+      return;
+    }
     setCheckoutBusy(true);
     setPaymentError("");
     try {
