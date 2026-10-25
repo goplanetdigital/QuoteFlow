@@ -1,6 +1,7 @@
 import { neon } from "@neondatabase/serverless";
 import { createHash, timingSafeEqual } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
+import { buildQuote, type RfqLine, type CatalogueItem } from "../../../lib/quoteflow";
 
 export const runtime = "nodejs";
 
@@ -38,11 +39,37 @@ export async function POST(request: NextRequest) {
     const meta = parsed?.meta;
     const rfq = parsed?.rfqLines;
     const catalogue = parsed?.catalogue;
-    if (!meta || !Array.isArray(rfq) || !Array.isArray(catalogue) ||
-        ![meta.quoteNumber, meta.notes, meta.currency, meta.supplierName, meta.customerName, meta.validDays, parsed?.sourceName].every(asciiOnly) ||
-        rfq.some((line: Record<string, unknown>) => ![line.code, line.description, line.unit].every(asciiOnly)) ||
-        catalogue.some((line: Record<string, unknown>) => ![line.code, line.description, line.unit].every(asciiOnly))) {
-      return NextResponse.json({ error: "Checkout paused: quotation contains characters unsupported by PDF export. No payment was made." }, { status: 422 });
+    if (!meta || typeof meta !== "object" || !Array.isArray(rfq) || !Array.isArray(catalogue) ||
+        !rfq.length || rfq.length > 1000 || rfq.some((line: unknown) => !line || typeof line !== "object") ||
+        catalogue.some((item: unknown) => !item || typeof item !== "object")) {
+      return NextResponse.json({ error: "Invalid quotation data. No payment was made." }, { status: 422 });
+    }
+    // Recompute approved lines server-side. Only characters that actually appear
+    // in the exported PDF should block checkout; unused catalogue rows are irrelevant.
+    const base = buildQuote(rfq as RfqLine[], catalogue as CatalogueItem[]);
+    const matches = parsed?.manualMatches && typeof parsed.manualMatches === "object" && !Array.isArray(parsed.manualMatches)
+      ? parsed.manualMatches as Record<string, unknown> : {};
+    const lines = base.lines.map((line) => {
+      const selectedCode = matches[line.id];
+      if (typeof selectedCode !== "string" || !selectedCode) return line;
+      const selected = (catalogue as CatalogueItem[]).find((item) => item.code === selectedCode);
+      if (!selected) return line;
+      const price = selected.approvedUnitPrice;
+      return { ...line, matchedCode: selected.code, matchedDescription: selected.description,
+        approvedUnitPrice: price, lineTotal: price === null ? null : Number((price * line.quantity).toFixed(2)),
+        reviewStatus: price === null ? "blocked" as const : "ready" as const };
+    });
+    if (lines.some((line) => line.reviewStatus !== "ready" ||
+        !Number.isFinite(line.quantity) || line.quantity <= 0 ||
+        !Number.isFinite(line.approvedUnitPrice) || (line.approvedUnitPrice ?? 0) < 0 ||
+        !Number.isFinite(line.lineTotal))) {
+      return NextResponse.json({ error: "All RFQ items need valid approved catalogue prices before checkout. No payment was made." }, { status: 422 });
+    }
+    const renderedFields = [meta.quoteNumber, meta.notes, meta.currency, meta.supplierName, meta.customerName,
+      meta.validDays, parsed?.sourceName,
+      ...lines.flatMap((line) => [line.code, line.description, line.matchedCode, line.matchedDescription, line.unit])];
+    if (renderedFields.some((value) => !asciiOnly(value)) || !/^[A-Z]{3}$/.test(String(meta.currency ?? ""))) {
+      return NextResponse.json({ error: "Checkout paused: quotation contains characters unsupported by PDF export or an invalid currency. No payment was made." }, { status: 422 });
     }
     const count = Array.isArray(parsed?.rfqLines) ? parsed.rfqLines.length : 0;
     const fingerprint = createHash("sha256").update(payload, "utf8").digest("hex");
