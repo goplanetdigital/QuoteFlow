@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createHash, timingSafeEqual } from "node:crypto";
-import { claimDelivery, markSent, markFailed, quarantineExpiredLeases, isolatedOutbox } from "@/lib/isolated-email-outbox";
+import { claimDelivery, markSent, markFailed, quarantineExpiredLeases, isolatedOutbox } from "../../../lib/isolated-email-outbox";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
