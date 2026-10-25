@@ -142,8 +142,7 @@ export async function POST(request: NextRequest) {
     });
     return NextResponse.json({ error: "Order storage failed" }, { status: 503 });
   }
-  // A payment receipt is not a file delivery: the quotation currently lives in
-  // the browser, so never claim PDF/Excel attachments or permanent restoration.
+  // A secure recovery link gives the customer access to verified PDF/Excel downloads.
   // Stripe can retry events; Resend's idempotency key prevents duplicate receipts.
   if (paid && process.env.RESEND_API_KEY?.trim()) {
     const email = checkout.customer_details?.email ?? checkout.customer_email;
@@ -163,7 +162,7 @@ export async function POST(request: NextRequest) {
           },
           body: JSON.stringify({
             from, to: [email], subject: "QuoteFlow payment confirmed",
-            text: "Your QuoteFlow payment has been confirmed.\n\nOpen your quotation recovery page: " + recoveryUrl.toString() + "\n\nIf your quotation was created before secure snapshot storage was introduced, return to the original browser to download PDF and Excel.\n\nThis email contains a recovery link, not file attachments.\n\nby ALLSET.co"
+            text: "Your QuoteFlow payment has been confirmed.\n\nOpen your secure quotation download page: " + recoveryUrl.toString() + "\n\nAfter your payment is verified, use Download PDF or Download Excel. Your link is a private bearer credential; do not forward it. Saved quotation snapshots expire after 90 days.\n\nIf your quotation predates secure snapshot storage, contact support rather than paying again. This email contains a secure download entry, not file attachments.\n\nby ALLSET.co"
           }), cache: "no-store"
         });
         if (!resendResponse.ok) {
