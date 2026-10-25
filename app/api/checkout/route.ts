@@ -107,16 +107,8 @@ export async function POST(request: NextRequest) {
     // Include the exact Stripe request body so differing return URLs or campaigns
     // never share an idempotency key and trigger a parameter mismatch.
     const idempotencyKey = "quoteflow-checkout-v3-" + createHash("sha256").update(params.toString()).digest("hex");
-    const response = await fetch("https://api.stripe.com/v1/checkout/sessions", {
-      method: "POST",
-      headers: { Authorization: "Bearer " + key, "Content-Type": "application/x-www-form-urlencoded", "Idempotency-Key": idempotencyKey },
-      body: params.toString(),
-      cache: "no-store"
-    });
-    const result = await response.json();
-    if (!response.ok || !result.url) return NextResponse.json({ error: "Stripe checkout could not start." }, { status: 502 });
-    // Persist the exact payload only after Stripe created a valid checkout session.
-    // Do not return a checkout URL if the quote cannot be restored after payment.
+    // Store the exact quotation BEFORE creating a payable Stripe session.
+    // If persistence fails, no Checkout Session is issued to the customer.
     const databaseUrl = process.env.DATABASE_URL?.trim();
     if (!databaseUrl) {
       console.error("QuoteFlow snapshot storage not configured");
@@ -131,6 +123,14 @@ export async function POST(request: NextRequest) {
       console.error("QuoteFlow snapshot persistence failed", error instanceof Error ? error.message : "unknown");
       return NextResponse.json({ error: "Secure quotation storage is temporarily unavailable. No payment was made." }, { status: 503 });
     }
+    const response = await fetch("https://api.stripe.com/v1/checkout/sessions", {
+      method: "POST",
+      headers: { Authorization: "Bearer " + key, "Content-Type": "application/x-www-form-urlencoded", "Idempotency-Key": idempotencyKey },
+      body: params.toString(),
+      cache: "no-store"
+    });
+    const result = await response.json();
+    if (!response.ok || !result.url) return NextResponse.json({ error: "Stripe checkout could not start." }, { status: 502 });
     return NextResponse.json({ url: result.url });
   } catch {
     return NextResponse.json({ error: "Checkout request failed." }, { status: 400 });
