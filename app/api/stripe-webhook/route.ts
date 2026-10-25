@@ -150,7 +150,7 @@ export async function POST(request: NextRequest) {
   }
   if (paid && process.env.RESEND_API_KEY?.trim()) {
     const email = checkout.customer_details?.email ?? checkout.customer_email;
-    if (!email || !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email)) {
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       console.error("QuoteFlow delivery: paid order has no valid recipient", { eventId: event.id });
       return NextResponse.json({ error: "Recipient email unavailable" }, { status: 503 });
     }
