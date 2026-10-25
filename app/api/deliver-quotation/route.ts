@@ -96,6 +96,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Saved quotation requires review" }, { status: 422, headers: noStore });
     }
     const subtotal = lines.reduce((sum, x) => sum + (x.lineTotal ?? 0), 0);
+    if (!/^[A-Z]{3}$/.test(String(quote.meta.currency ?? "")) ||
+        !Number.isFinite(subtotal) || lines.some(x => !Number.isFinite(x.quantity) ||
+          x.quantity <= 0 || !Number.isFinite(x.approvedUnitPrice) ||
+          (x.approvedUnitPrice ?? 0) < 0 || Math.abs((x.lineTotal ?? 0) - Number(((x.approvedUnitPrice ?? 0) * x.quantity).toFixed(2))) > 0.001)) {
+      return NextResponse.json({ error: "Saved quotation amount or currency is invalid" }, { status: 422, headers: noStore });
+    }
     const filename = (quote.meta.quoteNumber || "quotation").replace(/[^a-zA-Z0-9_-]/g, "_");
     if (format === "xlsx") {
       const XLSX = await import("xlsx");
