@@ -17,7 +17,7 @@ export async function GET() {
     const isolated = identity?.branch_id === "br-summer-term-aonsnvyi" &&
       identity?.project_id === "solitary-fog-81429256" &&
       identity?.db_name === "neondb" && identity?.db_role === "neondb_owner";
-    return NextResponse.json({isolated,readOnly:true},{status:isolated?200:503,headers:{"Cache-Control":"no-store"}});
+    return NextResponse.json({isolated,readOnly:true,checks:{project:identity?.project_id === "solitary-fog-81429256",branch:identity?.branch_id === "br-summer-term-aonsnvyi",database:identity?.db_name === "neondb",role:identity?.db_role === "neondb_owner"}},{status:isolated?200:503,headers:{"Cache-Control":"no-store"}});
   } catch {
     return NextResponse.json({isolated:false,reason:"connection_failed"},{status:503,headers:{"Cache-Control":"no-store"}});
   }
