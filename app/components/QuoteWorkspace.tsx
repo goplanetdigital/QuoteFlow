@@ -613,10 +613,19 @@ export default function QuoteWorkspace() {
       if (typeof receipt.sessionId !== "string" || receipt.payload !== quotationPayload) {
         throw new Error("Payment receipt does not match this quotation");
       }
+      const authorization = await fetch("/api/deliver-quotation", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId: receipt.sessionId, format, issueToken: true }),
+        cache: "no-store"
+      });
+      if (!authorization.ok) throw new Error("Secure download authorization failed");
+      const { token } = await authorization.json();
+      if (typeof token !== "string") throw new Error("Missing secure download token");
       const response = await fetch("/api/deliver-quotation", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sessionId: receipt.sessionId, format }),
+        body: JSON.stringify({ sessionId: receipt.sessionId, format, token }),
         cache: "no-store"
       });
       if (!response.ok) {
