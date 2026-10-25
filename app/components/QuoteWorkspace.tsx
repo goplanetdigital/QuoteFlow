@@ -163,7 +163,10 @@ export default function QuoteWorkspace() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const returnedSessionId = params.get("session_id");
-    const emailedRecovery = params.get("recover_session");
+    // Recovery links now carry their bearer token in the URL fragment, not the HTTP request.
+    // Continue accepting older query-based links for existing customers.
+    const fragmentParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+    const emailedRecovery = fragmentParams.get("recover_session") || params.get("recover_session");
     if (emailedRecovery && /^cs_(?:test|live)_[a-zA-Z0-9]+$/.test(emailedRecovery)) {
       setRecoverySessionId(emailedRecovery);
       setRecoveryMessage("Payment link detected. Select Restore to retrieve your quotation.");
