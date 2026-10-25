@@ -26,7 +26,7 @@ export async function claimDelivery(id: number) {
       AND provider_message_id IS NULL
       AND (status = 'PENDING' OR
            (status = 'FAILED' AND next_retry_at <= now()
-            AND last_error IS DISTINCT FROM 'LEASE_EXPIRED_OUTCOME_UNKNOWN'))
+            AND last_error IS DISTINCT FROM 'LEASE_EXPIRED_OUTCOME_UNKNOWN' AND last_error IS DISTINCT FROM 'PROVIDER_OUTCOME_UNKNOWN'))
     RETURNING id, recipient_email, idempotency_key, attempts
   `;
   return rows[0] ?? null;
