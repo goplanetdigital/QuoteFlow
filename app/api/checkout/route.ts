@@ -31,6 +31,19 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Invalid quotation payload." }, { status: 400 });
     }
     const parsed = JSON.parse(payload);
+    // Enforce PDF character safety on the server too; clients can bypass UI validation.
+    // Until Unicode fonts are supported, never create a paid PDF+Excel Checkout
+    // for source content that the PDF renderer could silently corrupt.
+    const asciiOnly = (value: unknown) => !/[^\x20-\x7E]/.test(String(value ?? ""));
+    const meta = parsed?.meta;
+    const rfq = parsed?.rfqLines;
+    const catalogue = parsed?.catalogue;
+    if (!meta || !Array.isArray(rfq) || !Array.isArray(catalogue) ||
+        ![meta.quoteNumber, meta.notes, meta.currency, meta.supplierName, meta.customerName, meta.validDays, parsed?.sourceName].every(asciiOnly) ||
+        rfq.some((line: Record<string, unknown>) => ![line.code, line.description, line.unit].every(asciiOnly)) ||
+        catalogue.some((line: Record<string, unknown>) => ![line.code, line.description, line.unit].every(asciiOnly))) {
+      return NextResponse.json({ error: "Checkout paused: quotation contains characters unsupported by PDF export. No payment was made." }, { status: 422 });
+    }
     const count = Array.isArray(parsed?.rfqLines) ? parsed.rfqLines.length : 0;
     const fingerprint = createHash("sha256").update(payload, "utf8").digest("hex");
     const amount = liveTest ? 100 : amountForItems(count);
