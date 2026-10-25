@@ -516,7 +516,7 @@ export default function QuoteWorkspace() {
       "Review and blocked items are excluded."
     ];
     const escape = (value: string) => value.replaceAll("\\", "\\\\").replaceAll("(", "\\(").replaceAll(")", "\\)");
-    const stream = lines.map((line, i) => "BT /F1 10 Tf 40 " + (780 - i * 25) + " Td (" + escape(line.replace(/[^\\x20-\\x7E]/g, "?")) + ") Tj ET").join("\\n");
+    const stream = lines.map((line, i) => "BT /F1 10 Tf 40 " + (780 - i * 25) + " Td (" + escape(line.replace(/[^\x20-\x7E]/g, "?")) + ") Tj ET").join("\\n");
     const objects = [
       "<< /Type /Catalog /Pages 2 0 R >>",
       "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
