@@ -606,6 +606,39 @@ export default function QuoteWorkspace() {
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
+  async function downloadPaidFile(format: "pdf" | "xlsx") {
+    if (!(await verifyExportAccess())) return;
+    try {
+      const receipt = JSON.parse(localStorage.getItem("quoteflow_paid_receipt") || "{}");
+      if (typeof receipt.sessionId !== "string" || receipt.payload !== quotationPayload) {
+        throw new Error("Payment receipt does not match this quotation");
+      }
+      const response = await fetch("/api/deliver-quotation", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId: receipt.sessionId, format }),
+        cache: "no-store"
+      });
+      if (!response.ok) {
+        const failure = await response.json().catch(() => ({}));
+        throw new Error(typeof failure.error === "string" ? failure.error : "File generation failed");
+      }
+      const blob = await response.blob();
+      if (!blob.size) throw new Error("Generated file is empty");
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = (meta.quoteNumber.replace(/[^a-zA-Z0-9_-]/g, "_") || "quotation") + "." + format;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 60000);
+      setMessage("Verified " + format.toUpperCase() + " downloaded from secure server.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Secure download failed. Please retry.");
+    }
+  }
+
   async function downloadQuoteExcel() {
     if (!(await verifyExportAccess())) return;
     if (!readyLines.length) {
@@ -1008,9 +1041,9 @@ export default function QuoteWorkspace() {
           <span>Only Ready lines are included. Review and Blocked lines remain excluded.</span>
         </div>
         <div className="export-actions">
-          <button type="button" onClick={async () => { if (!(await verifyExportAccess())) return; await downloadPdf(); await downloadQuoteExcel(); }} disabled={paymentStatus !== "paid"} title="Download both files; your browser may ask permission for multiple downloads">Download PDF + Excel</button>
-          <button type="button" className="secondary-button" onClick={downloadQuoteExcel} disabled={paymentStatus !== "paid"}>Download Excel</button>
-          <button type="button" onClick={downloadPdf} disabled={paymentStatus !== "paid"}>Download PDF</button>
+          <button type="button" onClick={async () => { await downloadPaidFile("pdf"); await downloadPaidFile("xlsx"); }} disabled={paymentStatus !== "paid"} title="Download both files; your browser may ask permission for multiple downloads">Download PDF + Excel</button>
+          <button type="button" className="secondary-button" onClick={() => downloadPaidFile("xlsx")} disabled={paymentStatus !== "paid"}>Download Excel</button>
+          <button type="button" onClick={() => downloadPaidFile("pdf")} disabled={paymentStatus !== "paid"}>Download PDF</button>
         </div>
       </div>
 
