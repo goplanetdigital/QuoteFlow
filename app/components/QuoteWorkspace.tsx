@@ -182,7 +182,44 @@ export default function QuoteWorkspace() {
       setRecoveryMessage("Stripe payment returned. If your quotation does not unlock automatically, select Restore paid download. No new charge is needed.");
       window.history.replaceState({}, "", window.location.pathname);
     }
-    if (!saved) return;
+    if (!saved) {
+      // A Stripe redirect can open a new tab or browser without sessionStorage.
+      // Recover the server-persisted quotation automatically, without a second payment.
+      if (returnedSessionId && /^cs_(?:test|live)_[a-zA-Z0-9]+$/.test(returnedSessionId)) {
+        setRecoveryBusy(true);
+        setPaymentStatus("checking");
+        fetch("/api/recover-quotation", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sessionId: returnedSessionId }),
+          cache: "no-store"
+        }).then(async (response) => {
+          if (!response.ok) throw new Error("Automatic recovery unavailable");
+          return response.json();
+        }).then((result) => {
+          if (typeof result.payload !== "string") throw new Error("Missing quotation");
+          const snapshot = JSON.parse(result.payload);
+          if (!Array.isArray(snapshot.rfqLines) || !Array.isArray(snapshot.catalogue) || !snapshot.meta) {
+            throw new Error("Invalid saved quotation");
+          }
+          setRfqLines(snapshot.rfqLines);
+          setCatalogue(snapshot.catalogue);
+          setManualMatches(snapshot.manualMatches || {});
+          setMeta(snapshot.meta);
+          setSourceName(snapshot.sourceName || "");
+          setAuthorizedPayload(result.payload);
+          setPaymentStatus("paid");
+          localStorage.setItem("quoteflow_paid_receipt", JSON.stringify({ sessionId: returnedSessionId, payload: result.payload }));
+          setRecoverySessionId("");
+          setRecoveryMessage("Payment verified. Your PDF and Excel downloads are unlocked.");
+          setPaymentError("");
+        }).catch(() => {
+          setPaymentStatus("unpaid");
+          setRecoveryMessage("Automatic restoration was unavailable. Select Restore paid download; do not pay again.");
+        }).finally(() => setRecoveryBusy(false));
+      }
+      return;
+    }
 
     try {
       const receipt = JSON.parse(saved) as { payload?: string; sessionId?: string };
