@@ -35,5 +35,5 @@ test('branded domain survives Stripe checkout and recovery emails use branded UR
   assert.match(checkout, /allowedHosts = new Set\(\[site\.hostname, "quoteflow\.allsetintl\.com"\]\)/);
   assert.match(checkout, /success_url: origin \+ "\/\?session_id=\{CHECKOUT_SESSION_ID\}"/);
   assert.match(webhook, /const siteUrl = "https:\/\/quoteflow\.allsetintl\.com"/);
-  assert.match(webhook, /recoveryUrl\.searchParams\.set\("recover_session", checkout\.id\)/);
+  assert.match(webhook, /recoveryUrl\.hash = new URLSearchParams\(\{ recover_session: checkout\.id \}\)\.toString\(\)/);
 });
