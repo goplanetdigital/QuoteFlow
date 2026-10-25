@@ -103,9 +103,11 @@ export async function POST(request: NextRequest) {
       success_url: origin + "/?session_id={CHECKOUT_SESSION_ID}",
       cancel_url: origin + "/?checkout=cancelled"
     });
+    // Prevent duplicate Stripe sessions when the same checkout request is retried.
+    const idempotencyKey = "quoteflow-checkout-v3-" + fingerprint + (liveTest ? "-live-test" : "-standard");
     const response = await fetch("https://api.stripe.com/v1/checkout/sessions", {
       method: "POST",
-      headers: { Authorization: "Bearer " + key, "Content-Type": "application/x-www-form-urlencoded" },
+      headers: { Authorization: "Bearer " + key, "Content-Type": "application/x-www-form-urlencoded", "Idempotency-Key": idempotencyKey },
       body: params.toString(),
       cache: "no-store"
     });
