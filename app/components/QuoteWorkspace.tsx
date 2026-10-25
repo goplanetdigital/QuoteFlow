@@ -172,6 +172,13 @@ export default function QuoteWorkspace() {
     const stored = localStorage.getItem("quoteflow_paid_receipt");
     const pending = sessionStorage.getItem("quoteflow_pending");
     const saved = returnedSessionId ? pending || stored : stored;
+    // A successful Stripe redirect may land in a new browser context without sessionStorage.
+    // Offer secure server-side recovery instead of silently losing the paid quotation.
+    if (returnedSessionId && /^cs_(?:test|live)_[a-zA-Z0-9]+$/.test(returnedSessionId)) {
+      setRecoverySessionId(returnedSessionId);
+      setRecoveryMessage("Stripe payment returned. If your quotation does not unlock automatically, select Restore paid download. No new charge is needed.");
+      window.history.replaceState({}, "", window.location.pathname);
+    }
     if (!saved) return;
 
     try {
