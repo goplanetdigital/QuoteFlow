@@ -1,7 +1,7 @@
 # QuoteFlow order ledger release checklist
 
-Production is currently on the stable webhook-only release. Do not promote the
-ledger release until the checks below pass.
+These are historical ledger preparation notes. The current PR #10 evidence and
+release decision are in [the 2026-10-28 acceptance report](pr10-release-acceptance-20261028.md), which supersedes status statements here.
 
 ## Database
 
@@ -29,9 +29,10 @@ ledger release until the checks below pass.
 
 ## Remaining release gate
 
-The existing browser-side PDF and XLSX generators are not server-side protected
-deliverables. A verified Checkout Session currently unlocks the browser UI,
-but browser code can be bypassed. Server-side generation or signed stored
-downloads are required before claiming tamper-resistant delivery.
+PR #10 now implements server-side PDF/XLSX generation behind verified payment
+and signed session-bound capabilities. Cross-customer capability rejection and
+saved-snapshot content passed isolated Preview acceptance. Provider receipt-read
+permission and actual recurring worker acceptance remain open; consult the
+current acceptance report before release.
 
 Never place database credentials, webhook signing secrets, or API keys in Git.

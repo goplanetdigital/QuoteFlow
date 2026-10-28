@@ -1,3 +1,4 @@
+import { verifiedDatabase } from "../../../lib/verified-database";
 import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
@@ -19,8 +20,7 @@ export async function GET() {
 
   if (checks.databaseConfigured) {
     try {
-      const { neon } = await import("@neondatabase/serverless");
-      const sql = neon(databaseUrl);
+      const sql = await verifiedDatabase(databaseUrl);
       const rows = await sql`SELECT
         to_regclass('public.quoteflow_orders') IS NOT NULL AS orders_ready,
         to_regclass('public.quoteflow_processed_events') IS NOT NULL AS events_ready,

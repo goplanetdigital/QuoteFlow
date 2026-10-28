@@ -1,5 +1,5 @@
+import { verifiedDatabase } from "../../../lib/verified-database";
 import { createHash } from "node:crypto";
-import { neon } from "@neondatabase/serverless";
 import { NextRequest, NextResponse } from "next/server";
 
 export const runtime = "nodejs";
@@ -38,7 +38,7 @@ export async function POST(request: NextRequest) {
         session.client_reference_id !== fingerprint) {
       return NextResponse.json({ error: "Payment not eligible for recovery." }, { status: 403 });
     }
-    const sql = neon(db);
+    const sql = await verifiedDatabase(db);
     const rows = await sql`SELECT payload::text AS payload FROM quoteflow_quote_snapshots
       WHERE fingerprint = ${fingerprint} AND expires_at > now() LIMIT 1`;
     const payload = rows[0]?.payload ? JSON.parse(rows[0].payload) : null;

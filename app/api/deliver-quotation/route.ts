@@ -1,5 +1,5 @@
+import { verifiedDatabase } from "../../../lib/verified-database";
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
-import { neon } from "@neondatabase/serverless";
 import { NextRequest, NextResponse } from "next/server";
 import { buildQuote, type CatalogueItem, type RfqLine } from "../../../lib/quoteflow";
 
@@ -89,7 +89,7 @@ export async function POST(request: NextRequest) {
         !timingSafeEqual(Buffer.from(parts[1], "hex"), Buffer.from(sign(expires), "hex"))) {
       return NextResponse.json({ error: "Download link expired or unauthorized" }, { status: 403, headers: noStore });
     }
-    const sql = neon(db);
+    const sql = await verifiedDatabase(db);
     const rows = await sql`SELECT payload::text AS payload FROM quoteflow_quote_snapshots
       WHERE fingerprint = ${fingerprint} AND expires_at > now() LIMIT 1`;
     const payload = rows[0]?.payload ? JSON.parse(rows[0].payload) : null;

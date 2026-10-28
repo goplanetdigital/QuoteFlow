@@ -1,0 +1,23 @@
+// Preview-only control-plane acceptance. Refuse to tick if any mail could be sent.
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import vm from 'node:vm';
+import {createRequire} from 'node:module';
+import ts from 'typescript';
+const require=createRequire(import.meta.url),exports={};
+assert.equal(process.env.VERCEL_ENV,'preview');
+assert.equal(process.env.VERCEL_PROJECT_ID,'prj_MbjZemw47Dz4UoyloYnMIdNvMQgp');
+vm.runInNewContext(ts.transpileModule(fs.readFileSync('lib/verified-database.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS}}).outputText,{exports,process,URL,require});
+const sql=await exports.verifiedDatabase(process.env.DATABASE_URL);
+const [due]=await sql`SELECT count(*)::int AS n FROM quoteflow_email_deliveries WHERE provider_message_id IS NULL AND payload IS NOT NULL AND attempts<3 AND (first_attempt_at IS NULL OR first_attempt_at>now()-interval '23 hours') AND (status='PENDING' OR (status='FAILED' AND next_retry_at<=now()) OR (status='SENDING' AND lease_until<now()))`;
+assert.equal(due.n,0,'Worker control test refuses to send any queued mail');
+const base=new URL(process.env.QUOTEFLOW_ACCEPTANCE_URL);assert.match(base.hostname,/^quote-flow-[a-z0-9]+-go-planet-digital\.vercel\.app$/);
+const url=new URL('/api/email-dispatch',base);
+const denied=await fetch(url,{headers:{'x-vercel-trusted-oidc-idp-token':process.env.VERCEL_OIDC_TOKEN},signal:AbortSignal.timeout(20000)});assert.equal(denied.status,401);
+const tick=await fetch(url,{headers:{'x-vercel-trusted-oidc-idp-token':process.env.VERCEL_OIDC_TOKEN,Authorization:'Bearer '+process.env.QUOTEFLOW_PREVIEW_WORKER_SECRET},signal:AbortSignal.timeout(55000)});
+const result=await tick.json();assert.equal(result.dispatch?.empty,true);
+assert.ok([200,503].includes(tick.status));
+console.log(JSON.stringify({acceptance:'deployed authenticated worker GET',unauthenticated:denied.status,http:tick.status,noDueJobs:true,noOutgoingMail:true,reconciliationHttp:result.reconcile?.providerStatus,receiptPermissionBlocked:result.reconcile?.providerError==='restricted_api_key'}));
+const [fixtures]=await sql`SELECT count(*)::int AS n FROM quoteflow_email_deliveries WHERE stripe_session_id LIKE 'acceptance-retry-%'`;
+assert.equal(fixtures.n,0);
+console.log(JSON.stringify({acceptance:'synthetic retry fixtures cleaned',pass:true}));
