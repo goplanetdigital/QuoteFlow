@@ -16,6 +16,9 @@ test('retry uncertain outcomes only inside provider deduplication window and att
   for(const status of [400,401,403,409,422]) assert.equal(p.retryDecision(status,1,first,new Date('2026-10-28T00:01:00Z')).retry,false);
   assert.equal(p.retryDecision(null,3,first,new Date('2026-10-28T00:01:00Z')).retry,false);
   assert.equal(p.retryDecision(null,1,first,new Date('2026-10-28T23:00:00Z')).retry,false);
+  assert.equal(p.retryDecision(200,1,first,new Date('2026-10-28T00:01:00Z')).retry,true,'Missing provider id remains uncertain');
+  assert.equal(p.retryDecision(409,1,first,new Date('2026-10-28T00:01:00Z'),'concurrent_idempotent_requests').retry,true);
+  assert.equal(p.retryDecision(409,1,first,new Date('2026-10-28T00:01:00Z'),'invalid_idempotent_request').retry,false);
 });
 test('persisted JSONB key ordering cannot break payload hash; altered content does',()=>{
   const p=policy({});

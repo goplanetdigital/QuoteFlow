@@ -28,9 +28,9 @@ export async function markSent(id: number, lease: string, messageId: string) {
     WHERE id=${id} AND lease_token=${lease}::uuid AND status='SENDING' AND provider_message_id IS NULL
     RETURNING id,status,provider_message_id`;
 }
-export async function markFailed(id: number, lease: string, status: number | null, attempts: number, firstAttempt: Date) {
+export async function markFailed(id: number, lease: string, status: number | null, attempts: number, firstAttempt: Date, providerError?: string) {
   const sql = await isolatedOutbox();
-  const decision = retryDecision(status, attempts, firstAttempt);
+  const decision = retryDecision(status, attempts, firstAttempt, new Date(), providerError);
   return sql`UPDATE quoteflow_email_deliveries SET status='FAILED', lease_until=NULL, lease_token=NULL,
     last_error=${decision.reason}, last_provider_status=${status},
     next_retry_at=CASE WHEN ${decision.retry} THEN now()+(${decision.delaySeconds ?? 0} * interval '1 second') ELSE NULL END,

@@ -13,6 +13,11 @@ export async function dispatchRequest(request: NextRequest) {
   // A dry-run never reclaims leases or mutates jobs.
   if (input.dryRun === false && input.action !== "reconcile") await quarantineExpiredLeases();
   const rows = input.id !== undefined ? await sql`SELECT * FROM quoteflow_email_deliveries WHERE id=${input.id}`
+    : input.action === "reconcile" ? await sql`SELECT * FROM quoteflow_email_deliveries WHERE status='SENT'
+        AND provider_message_id IS NOT NULL AND payload IS NOT NULL
+        AND COALESCE(provider_status,'accepted') NOT IN ('delivered','opened','clicked','bounced','failed','complained')
+        AND (provider_checked_at IS NULL OR provider_checked_at<now()-interval '5 minutes')
+        ORDER BY provider_checked_at NULLS FIRST,created_at LIMIT 1`
     : await sql`SELECT * FROM quoteflow_email_deliveries WHERE provider_message_id IS NULL AND payload IS NOT NULL
         AND attempts<3 AND (status='PENDING' OR (status='FAILED' AND next_retry_at<=now())) ORDER BY created_at LIMIT 1`;
   const record = rows[0];
@@ -21,9 +26,14 @@ export async function dispatchRequest(request: NextRequest) {
     return NextResponse.json({ error: "Forbidden recipient or job kind" }, { status: 403 });
   if (input.action === "reconcile") {
     if (!record.provider_message_id) return NextResponse.json({ error: "Provider id unavailable; manual reconciliation required" }, { status: 409 });
+    if (input.dryRun !== false) return NextResponse.json({ id: record.id, dryRun: true, wouldReconcile: true }, { headers: noStore });
     const r = await fetch("https://api.resend.com/emails/" + encodeURIComponent(record.provider_message_id), {
-      headers: { Authorization: "Bearer " + process.env.RESEND_API_KEY }, cache: "no-store", signal: AbortSignal.timeout(15000) });
-    if (!r.ok) return NextResponse.json({ error: "Provider reconciliation unavailable", providerStatus: r.status }, { status: 502 });
+      headers: { Authorization: "Bearer " + (process.env.RESEND_READ_API_KEY || process.env.RESEND_API_KEY) }, cache: "no-store", signal: AbortSignal.timeout(15000) });
+    if (!r.ok) {
+      const body = await r.json().catch(() => ({}));
+      return NextResponse.json({ error: "Provider reconciliation unavailable", providerStatus: r.status,
+        providerError: typeof body.name === "string" ? body.name : undefined }, { status: 502, headers: noStore });
+    }
     const receipt = await r.json();
     const to = Array.isArray(receipt.to) ? receipt.to.map((s: string) => s.toLowerCase()) : [];
     if (receipt.id !== record.provider_message_id || to.length !== 1 || to[0] !== record.recipient_email || receipt.subject !== record.payload?.subject)
@@ -45,17 +55,19 @@ export async function dispatchRequest(request: NextRequest) {
     return NextResponse.json({ error: "Claimed payload identity mismatch" }, { status: 409 });
   }
   let status: number | null = null;
+  let providerError: string | undefined;
   try {
     const r = await fetch("https://api.resend.com/emails", { method: "POST", headers: {
       Authorization: "Bearer " + process.env.RESEND_API_KEY, "Content-Type": "application/json", "Idempotency-Key": job.idempotency_key
     }, body: JSON.stringify(job.payload), signal: AbortSignal.timeout(15000) });
     status = r.status;
     const receipt = await r.json().catch(() => ({}));
+    providerError = typeof receipt.name === "string" ? receipt.name : undefined;
     if (r.ok && typeof receipt.id === "string") {
       const updated = await markSent(Number(job.id), job.lease_token, receipt.id);
       return NextResponse.json({ id: job.id, accepted: true, providerStatus: r.status, recorded: updated.length === 1 }, { status: updated.length === 1 ? 200 : 503, headers: noStore });
     }
   } catch { /* Retry identical payload/key only within the bounded 23h window. */ }
-  await markFailed(Number(job.id), job.lease_token, status, Number(job.attempts), new Date(job.first_attempt_at));
+  await markFailed(Number(job.id), job.lease_token, status, Number(job.attempts), new Date(job.first_attempt_at), providerError);
   return NextResponse.json({ error: "Provider result not confirmed", providerStatus: status, id: job.id }, { status: 502, headers: noStore });
 }

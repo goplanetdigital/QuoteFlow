@@ -17,7 +17,7 @@ jobs:
         with:
           node-version: '22'
       - name: Install dependencies
-        run: npm install --no-audit --no-fund
+        run: npm ci --no-audit --no-fund
       - name: Run pricing and payment regression checks
         run: node --test tests/*.test.mjs
       - name: Production API smoke check (read-only and invalid payment only)
@@ -27,3 +27,4 @@ jobs:
         run: node tests/production-smoke.mjs
       - name: Production build check
         run: npm run build
+
