@@ -50,11 +50,14 @@ log('actual completed event duplicate replay',{pass:true,noResend:true});
 for(const body of [null,[],{dryRun:'false'}])assert.equal((await post('/api/preview-email-dispatch',body,true)).r.status,400);
 log('deployed dispatcher input validation',{pass:true});
 // Different synthetic customer, same owned test mailbox; never deliver this job.
-const payload=JSON.stringify({...parsed,meta:{...parsed.meta,customerName:'ISOLATED CUSTOMER B '+run,quoteNumber:'ISOLATION-B-'+run}});
-const checkout=await post('/api/checkout',{payload});assert.equal(checkout.r.status,200);
-const bId=new URL(checkout.data.url).pathname.split('/').pop();assert.match(bId,/^cs_test_/);
+const [priorB]=await sql`SELECT o.stripe_session_id,s.payload::text AS payload FROM quoteflow_orders o JOIN quoteflow_quote_snapshots s ON s.fingerprint=o.fingerprint WHERE o.stripe_event_id LIKE 'evt_preview_failure_%' AND o.fingerprint<>${a.metadata.fingerprint} ORDER BY o.created_at DESC LIMIT 1`;
+const payload=priorB?JSON.parse(priorB.payload):JSON.stringify({...parsed,meta:{...parsed.meta,customerName:'ISOLATED CUSTOMER B '+run,quoteNumber:'ISOLATION-B-'+run}});
+let bId=priorB?.stripe_session_id;
+if(!bId){const checkout=await post('/api/checkout',{payload});assert.equal(checkout.r.status,200);bId=new URL(checkout.data.url).pathname.split('/').pop();}
+assert.match(bId,/^cs_test_/);
 try {
 let b=await stripe('/v1/checkout/sessions/'+bId);
+if(b.payment_status!=='paid') {
 await stripe('/v1/payment_pages/'+bId);
 async function method(token){return stripe('/v1/payment_methods','POST',{type:'card','card[token]':token,'billing_details[email]':'jcaiworker@gmail.com','billing_details[name]':'Preview Customer B','billing_details[address][line1]':'354 Oyster Point Blvd','billing_details[address][city]':'South San Francisco','billing_details[address][postal_code]':'94080','billing_details[address][state]':'CA','billing_details[address][country]':'US'});}
 const declined=await method('tok_chargeDeclined');
@@ -69,7 +72,13 @@ assert.equal((await sql`SELECT count(*)::int AS n FROM quoteflow_email_deliverie
 log('actual Test card decline and signed failure fixture',{pass:true,noDownload:true,noEmailJob:true});
 const visa=await method('tok_visa');await stripe('/v1/payment_pages/'+bId+'/confirm','POST',{payment_method:visa.id,expected_amount:String(b.amount_total)});
 b=await stripe('/v1/checkout/sessions/'+bId);assert.equal(b.payment_status,'paid');assert.equal(b.livemode,false);
-const completed=await stripe('/v1/events?type=checkout.session.completed&limit=100');const bEvent=completed.data.find(e=>e.data.object.id===bId);assert.ok(bEvent);await webhook(bEvent);
+} else log('resume existing Test customer B after verified decline',{pass:true,newPayment:false});
+let bEvent;
+for(let poll=0;poll<10&&!bEvent;poll++){
+ const completed=await stripe('/v1/events?type=checkout.session.completed&limit=100');bEvent=completed.data.find(e=>e.data.object.id===bId);
+ if(!bEvent)await new Promise(resolve=>setTimeout(resolve,1500));
+}
+assert.ok(bEvent,'Actual Test completion event not yet visible');await webhook(bEvent);
 await webhook({id:'evt_preview_late_failure_'+run,type:'checkout.session.async_payment_failed',livemode:false,created:Math.floor(Date.now()/1000),data:{object:b}});
 assert.equal((await sql`SELECT payment_status FROM quoteflow_orders WHERE stripe_session_id=${bId}`)[0].payment_status,'paid');
 const aToken=await post('/api/deliver-quotation',{sessionId:a.id,format:'pdf',issueToken:true});assert.equal(aToken.r.status,200);
@@ -81,7 +90,7 @@ for(const format of ['pdf','xlsx']){
  const bytes=Buffer.from(await r.arrayBuffer());let contents;
  if(format==='pdf'){assert.equal(bytes.subarray(0,5).toString(),'%PDF-');contents=bytes.toString();}
  else{const wb=XLSX.read(bytes,{type:'buffer'});contents=JSON.stringify(XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1}));}
- assert.equal(contents.includes('ISOLATED CUSTOMER B '+run),isB);assert.ok(contents.includes('247.2'));
+ assert.equal(contents.includes(JSON.parse(payload).meta.customerName),isB);assert.ok(contents.includes('247.2'));
  log('actual paid file contents and customer isolation',{format,customer:isB?'B':'A',bytes:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex'),pass:true});
  }
 }

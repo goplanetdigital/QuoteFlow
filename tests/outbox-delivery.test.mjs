@@ -38,3 +38,9 @@ test('worker authentication rejects absent, malformed and unrelated credentials'
   for(const v of [null,'Bearer wrong','Basic '+secret]) assert.equal(p.workerAuthorized(v),false);
   assert.equal(p.workerAuthorized('Bearer '+secret),true);
 });
+
+test('Vercel cron secret authenticates Production while Preview keeps its isolated worker secret',()=>{
+ const secret='c'.repeat(48);
+ assert.equal(policy({VERCEL_ENV:'production',CRON_SECRET:secret}).workerAuthorized('Bearer '+secret),true);
+ assert.equal(policy({VERCEL_ENV:'preview',CRON_SECRET:secret}).workerAuthorized('Bearer '+secret),false);
+});

@@ -12,7 +12,7 @@ export function recipientAllowed(email: string): boolean {
   return allowed.length === 1 && allowed[0] === TEST_RECIPIENT && email === TEST_RECIPIENT;
 }
 export function workerAuthorized(header: string | null): boolean {
-  const secret = process.env.VERCEL_ENV === "preview" ? process.env.QUOTEFLOW_PREVIEW_WORKER_SECRET : process.env.QUOTEFLOW_DELIVERY_WORKER_SECRET;
+  const secret = process.env.VERCEL_ENV === "preview" ? process.env.QUOTEFLOW_PREVIEW_WORKER_SECRET : (process.env.CRON_SECRET || process.env.QUOTEFLOW_DELIVERY_WORKER_SECRET);
   if (!secret || secret.length < 32 || !header?.startsWith("Bearer ")) return false;
   return timingSafeEqual(createHash("sha256").update(secret).digest(), createHash("sha256").update(header.slice(7)).digest());
 }
