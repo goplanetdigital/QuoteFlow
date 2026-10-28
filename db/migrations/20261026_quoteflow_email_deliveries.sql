@@ -19,3 +19,15 @@ CREATE TABLE IF NOT EXISTS quoteflow_email_deliveries (
 );
 CREATE INDEX IF NOT EXISTS quoteflow_email_deliveries_due_idx
  ON quoteflow_email_deliveries(status,next_retry_at) WHERE status IN ('PENDING','FAILED');
+
+-- Additive delivery state only; no historical backfill or order changes.
+ALTER TABLE quoteflow_email_deliveries
+ ADD COLUMN IF NOT EXISTS payload JSONB,
+ ADD COLUMN IF NOT EXISTS payload_hash CHAR(64),
+ ADD COLUMN IF NOT EXISTS lease_token UUID,
+ ADD COLUMN IF NOT EXISTS first_attempt_at TIMESTAMPTZ,
+ ADD COLUMN IF NOT EXISTS provider_status TEXT,
+ ADD COLUMN IF NOT EXISTS provider_checked_at TIMESTAMPTZ,
+ ADD COLUMN IF NOT EXISTS delivered_at TIMESTAMPTZ,
+ ADD COLUMN IF NOT EXISTS last_provider_status INTEGER;
+

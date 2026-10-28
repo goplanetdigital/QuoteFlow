@@ -1,5 +1,6 @@
 import { verifiedDatabase } from "../../../lib/verified-database";
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { outboxEnabled, payloadHash, recipientAllowed, type MailPayload } from "../../../lib/delivery-policy";
+import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 
 export const runtime = "nodejs";
@@ -93,11 +94,32 @@ export async function POST(request: NextRequest) {
   const failed = event.type === "checkout.session.async_payment_failed";
   if (!paid && !failed) return NextResponse.json({ received: true });
 
+
+  const recipient = (checkout.customer_details?.email ?? checkout.customer_email ?? "").trim().toLowerCase();
+  if (paid && !outboxEnabled()) return NextResponse.json({ error: "Automated delivery not enabled" }, { status: 503 });
+  if (paid && !recipientAllowed(recipient)) return NextResponse.json({ error: "Preview recipient not allowed or invalid recipient" }, { status: 403 });
+  const siteUrl = "https://quoteflow.allsetintl.com";
+  const previewHost = process.env.VERCEL_BRANCH_URL || process.env.VERCEL_URL || "";
+  if (paid && !isProduction && !/^quote-flow-[a-z0-9-]+-go-planet-digital\.vercel\.app$/.test(previewHost))
+    return NextResponse.json({ error: "Preview delivery origin invalid" }, { status: 503 });
+  const recoveryUrl = new URL(isProduction ? siteUrl : "https://" + (previewHost || "invalid.example"));
+  recoveryUrl.hash = new URLSearchParams({ recover_session: checkout.id }).toString();
+  const receiptIdempotencyKey = "quoteflow-receipt-" + checkout.id;
+  const kind = isProduction ? "payment_receipt" : "isolated_preview_test";
+  const mail: MailPayload = {
+    from: process.env.QUOTE_EMAIL_FROM?.trim() || "QuoteFlow <orders@allsetintl.com>",
+    to: [recipient],
+    subject: (isProduction ? "QuoteFlow payment confirmed" : "QuoteFlow Preview payment confirmed") + " [" + fingerprint.slice(0,12) + "]",
+    text: (isProduction ? "Your QuoteFlow payment has been confirmed." : "QuoteFlow isolated test payment confirmed. No live charge was made.") +
+      "\n\nOpen your secure quotation download page: " + recoveryUrl.toString() +
+      "\n\nAfter your payment is verified, use Download PDF or Download Excel. This private recovery credential must not be forwarded. Saved quotations expire after 90 days.\n\nby ALLSET.co"
+  };
+
   try {
     const sql = await verifiedDatabase(databaseUrl);
     // A single SQL statement makes event deduplication and order upsert atomic.
     // Paid is terminal here: a late failure event cannot undo a confirmed payment.
-    await sql`
+    const queued = await sql`
       WITH event_insert AS (
         INSERT INTO quoteflow_processed_events
           (stripe_event_id, stripe_session_id, event_type)
@@ -105,6 +127,7 @@ export async function POST(request: NextRequest) {
         ON CONFLICT (stripe_event_id) DO NOTHING
         RETURNING stripe_event_id
       )
+      , order_upsert AS (
       INSERT INTO quoteflow_orders
         (stripe_session_id, stripe_payment_intent_id, fingerprint, item_count,
          amount_total, currency, payment_status, stripe_event_id,
@@ -135,41 +158,26 @@ export async function POST(request: NextRequest) {
           WHEN quoteflow_orders.payment_status = 'paid' THEN quoteflow_orders.updated_at
           ELSE now()
         END
+      RETURNING stripe_session_id, payment_status
+      ), delivery_outbox AS (
+        INSERT INTO quoteflow_email_deliveries (stripe_session_id,email_kind,recipient_email,idempotency_key,payload,payload_hash)
+        SELECT ${checkout.id},${kind},${recipient},${createHash("sha256").update(receiptIdempotencyKey).digest("hex")},${JSON.stringify(mail)}::jsonb,${payloadHash(mail)}
+        FROM (SELECT stripe_session_id,payment_status FROM order_upsert
+              UNION ALL SELECT stripe_session_id,payment_status FROM quoteflow_orders
+              WHERE stripe_session_id=${checkout.id} AND NOT EXISTS(SELECT 1 FROM order_upsert)) o
+        WHERE ${paid} AND o.payment_status='paid'
+          AND EXISTS(SELECT 1 FROM quoteflow_quote_snapshots WHERE fingerprint=${fingerprint} AND expires_at>now())
+        ON CONFLICT(stripe_session_id,email_kind) DO NOTHING RETURNING id
+      ) SELECT id FROM delivery_outbox
+        UNION ALL SELECT id FROM quoteflow_email_deliveries WHERE stripe_session_id=${checkout.id} AND email_kind=${kind} LIMIT 1
     `;
+    if (paid && queued.length !== 1) throw new Error("Paid quotation snapshot unavailable for delivery");
   } catch (error) {
     console.error("QuoteFlow webhook: order persistence failed", {
       eventId: event.id, message: error instanceof Error ? error.message : "unknown"
     });
     return NextResponse.json({ error: "Order storage failed" }, { status: 503 });
   }
-  // Preserve the established recovery email contract for the future outbox
-  // dispatcher. This branch does not send emails.
-  const siteUrl = "https://quoteflow.allsetintl.com";
-  const recoveryUrl = new URL(siteUrl);
-  recoveryUrl.hash = new URLSearchParams({ recover_session: checkout.id }).toString();
-  const receiptIdempotencyKey = "quoteflow-receipt-" + checkout.id;
-  // Preview delivery must be explicitly enabled and restricted by the
-  // server-side allowlist; never fall back to arbitrary Stripe recipients.
-  const previewRecipientAllowlist = (process.env.QUOTEFLOW_TEST_EMAIL_ALLOWLIST || "")
-    .split(",").map((value) => value.trim().toLowerCase()).filter(Boolean);
-  if (process.env.VERCEL_ENV === "preview" && paid) {
-    const recipient = (checkout.customer_details?.email ?? checkout.customer_email ?? "").toLowerCase();
-    if (!previewRecipientAllowlist.includes(recipient)) {
-      return NextResponse.json({ error: "Preview recipient not allowed" }, { status: 403 });
-    }
-  }
-  void recoveryUrl;
-  void receiptIdempotencyKey;
-  // The outbox is intentionally disabled until a reviewed migration, dedicated
-  // dispatcher, provider reconciliation and isolated E2E have passed.
-  // Do not send directly from a Stripe webhook: retries can outlive provider
-  // idempotency retention, and a 2xx response does not prove Gmail delivery.
-  if (paid) {
-    console.error("QuoteFlow paid fulfillment awaiting verified outbox", { eventId: event.id });
-    return NextResponse.json(
-      { error: "Automated delivery not enabled" },
-      { status: 503, headers: { "Cache-Control": "no-store" } }
-    );
-  }
-  return NextResponse.json({ received: true }, { headers: { "Cache-Control": "no-store" } });
+  return NextResponse.json({ received: true, ...(paid ? { deliveryQueued: true } : {}) }, { headers: { "Cache-Control": "no-store" } });
 }
+
