@@ -6,7 +6,13 @@ export async function dispatchRequest(request: NextRequest) {
   if (!workerAuthorized(request.headers.get("authorization"))) return NextResponse.json({ error: "Unauthorized" }, { status: 401, headers: noStore });
   if (!outboxEnabled() || !process.env.RESEND_API_KEY) return NextResponse.json({ error: "Worker disabled or provider unavailable" }, { status: 503, headers: noStore });
   let input: { id?: number; dryRun?: boolean; action?: string };
-  try { input = await request.json(); } catch { return NextResponse.json({ error: "Invalid JSON" }, { status: 400 }); }
+  try {
+    const body: unknown = await request.json();
+    if (!body || typeof body !== "object" || Array.isArray(body)) throw new Error("Invalid body");
+    input = body;
+    if ((input.dryRun !== undefined && typeof input.dryRun !== "boolean") ||
+        (input.action !== undefined && typeof input.action !== "string")) throw new Error("Invalid options");
+  } catch { return NextResponse.json({ error: "Invalid JSON or options" }, { status: 400, headers: noStore }); }
   if (input.id !== undefined && (!Number.isSafeInteger(input.id) || input.id < 1)) return NextResponse.json({ error: "Invalid id" }, { status: 400 });
   if (input.action && !["dispatch", "reconcile"].includes(input.action)) return NextResponse.json({ error: "Invalid action" }, { status: 400 });
   const sql = await isolatedOutbox();
@@ -19,7 +25,7 @@ export async function dispatchRequest(request: NextRequest) {
         AND (provider_checked_at IS NULL OR provider_checked_at<now()-interval '5 minutes')
         ORDER BY provider_checked_at NULLS FIRST,created_at LIMIT 1`
     : await sql`SELECT * FROM quoteflow_email_deliveries WHERE provider_message_id IS NULL AND payload IS NOT NULL
-        AND attempts<3 AND (status='PENDING' OR (status='FAILED' AND next_retry_at<=now())) ORDER BY created_at LIMIT 1`;
+        AND attempts<3 AND (first_attempt_at IS NULL OR first_attempt_at>now()-interval '23 hours') AND (status='PENDING' OR (status='FAILED' AND next_retry_at<=now())) ORDER BY created_at LIMIT 1`;
   const record = rows[0];
   if (!record) return NextResponse.json({ empty: true }, { status: input.id ? 404 : 200, headers: noStore });
   if (!recipientAllowed(record.recipient_email) || (process.env.VERCEL_ENV === "preview" && record.email_kind !== "isolated_preview_test"))
@@ -47,7 +53,9 @@ export async function dispatchRequest(request: NextRequest) {
   const payload = record.payload as MailPayload | null;
   if (!payload || payloadHash(payload) !== record.payload_hash || payload.to.length !== 1 || payload.to[0] !== record.recipient_email)
     return NextResponse.json({ error: "Stored payload missing or changed; manual review required" }, { status: 409 });
-  if (input.dryRun !== false) return NextResponse.json({ id: record.id, dryRun: true, status: record.status, eligible: record.status === "PENDING" || (record.status === "FAILED" && !!record.next_retry_at) }, { headers: noStore });
+  if (input.dryRun !== false) return NextResponse.json({ id: record.id, dryRun: true, status: record.status, eligible: !record.provider_message_id && Number(record.attempts)<3 &&
+      (!record.first_attempt_at || new Date(record.first_attempt_at).getTime()>Date.now()-23*60*60*1000) &&
+      (record.status === "PENDING" || (record.status === "FAILED" && !!record.next_retry_at && new Date(record.next_retry_at).getTime()<=Date.now())) }, { headers: noStore });
   const job = await claimDelivery(Number(record.id));
   if (!job) return NextResponse.json({ error: "Not claimable", status: record.status }, { status: 409, headers: noStore });
   if (payloadHash(job.payload) !== job.payload_hash || job.payload.to?.[0] !== job.recipient_email || !recipientAllowed(job.recipient_email)) {
