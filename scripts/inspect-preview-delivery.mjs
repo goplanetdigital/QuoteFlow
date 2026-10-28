@@ -18,5 +18,5 @@ const jobs=await sql`SELECT id,status,provider_message_id FROM quoteflow_email_d
 if(jobs[0]){
  const receipt=await fetch('https://api.resend.com/emails/'+encodeURIComponent(jobs[0].provider_message_id),{headers:{Authorization:'Bearer '+process.env.RESEND_API_KEY}});
  const data=await receipt.json();
- console.log(JSON.stringify({inspection:'existing provider receipt read access',http:receipt.status,hasReceiptId:!!data.id,lastEvent:data.last_event??null}));
+ console.log(JSON.stringify({inspection:'existing provider receipt read access',http:receipt.status,hasReceiptId:!!data.id,lastEvent:data.last_event??null,errorName:data.name,message:typeof data.message==='string'?data.message.replace(/re_[A-Za-z0-9]+/g,'[redacted]'):undefined}));
 }
